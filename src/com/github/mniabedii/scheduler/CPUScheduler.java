@@ -21,9 +21,11 @@ import com.github.mniabedii.resource.ResourceRequestResult;
 import com.github.mniabedii.resource.ResourceWaitQueue;
 import com.github.mniabedii.resource.ResourceWaitRequest;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Random;
 
 public class CPUScheduler implements Runnable {
 
@@ -53,6 +55,12 @@ public class CPUScheduler implements Runnable {
 
         private int deadlockCount;
         private int deadlockVictimCount;
+
+        private final Random resourceRandom;
+
+        private int resourceRequestCount;
+        private int resourceGrantCount;
+        private int resourceBlockCount;
 
         public CPUScheduler(
                         SimulationClock clock,
@@ -131,6 +139,13 @@ public class CPUScheduler implements Runnable {
 
                 this.deadlockCount = 0;
                 this.deadlockVictimCount = 0;
+
+                this.resourceRandom = new Random(
+                                SimulationConfig.RESOURCE_RANDOM_SEED);
+
+                this.resourceRequestCount = 0;
+                this.resourceGrantCount = 0;
+                this.resourceBlockCount = 0;
         }
 
         @Override
@@ -195,6 +210,18 @@ public class CPUScheduler implements Runnable {
                 return deadlockVictimCount;
         }
 
+        public int getResourceRequestCount() {
+                return resourceRequestCount;
+        }
+
+        public int getResourceGrantCount() {
+                return resourceGrantCount;
+        }
+
+        public int getResourceBlockCount() {
+                return resourceBlockCount;
+        }
+
         private String determinePreemptionReason() {
                 PCB current = runningProcess;
 
@@ -241,7 +268,7 @@ public class CPUScheduler implements Runnable {
 
                         default:
                                 throw new IllegalStateException(
-                                                "Unknown process type: "
+                                                "Unknown Scheduling Level: "
                                                                 + current.getType());
                 }
         }
@@ -301,8 +328,7 @@ public class CPUScheduler implements Runnable {
                                 pcb.getPid());
         }
 
-        private void executeCurrentProcessStep()
-                        throws InterruptedException {
+        private void executeCurrentProcessStep() throws InterruptedException {
 
                 PCB pcb = runningProcess;
 
@@ -321,8 +347,18 @@ public class CPUScheduler implements Runnable {
                 }
 
                 if (result.isPageFault()) {
-                        blockForPageFault(pcb, pageNumber);
+                        blockForPageFault(
+                                        pcb,
+                                        pageNumber);
 
+                        return;
+                }
+
+                /*
+                 * Resource management has no additional
+                 * logical-tick cost in the specification.
+                 */
+                if (attemptResourceRequest(pcb)) {
                         return;
                 }
 
@@ -379,17 +415,21 @@ public class CPUScheduler implements Runnable {
         private void terminateCurrentProcess() {
                 PCB pcb = runningProcess;
 
-                pcb.setState(ProcessState.TERMINATED);
-
                 mmu.invalidateProcess(pcb.getPid());
                 physicalMemory.releaseProcess(pcb);
                 resourceManager.releaseAllResources(pcb);
 
-                terminatedProcessCount++;
+                pcb.setWaitReason(WaitReason.NONE);
+                pcb.setState(ProcessState.TERMINATED);
 
+                terminatedProcessCount++;
                 runningProcess = null;
                 interactiveQuantumUsed = 0;
 
+                /*
+                 * Released resources may allow blocked
+                 * processes to continue.
+                 */
                 retryResourceWaiters();
 
                 System.out.printf(
@@ -484,7 +524,88 @@ public class CPUScheduler implements Runnable {
                                 pcb.getPid());
         }
 
-        private void blockForResources(PCB pcb, int[] request) {
+        private boolean attemptResourceRequest(PCB pcb) {
+                int[] remainingNeed = resourceManager.getRemainingNeed(pcb);
+
+                List<Integer> neededResourceIndexes = new ArrayList<>();
+
+                for (int i = 0; i < remainingNeed.length; i++) {
+                        if (remainingNeed[i] > 0) {
+                                neededResourceIndexes.add(i);
+                        }
+                }
+
+                // The process already owns its complete maximum demand.
+                if (neededResourceIndexes.isEmpty()) {
+                        return false;
+                }
+
+                int chance = resourceRandom.nextInt(100);
+
+                if (chance >= SimulationConfig.RESOURCE_REQUEST_CHANCE_PERCENT) {
+
+                        return false;
+                }
+
+                int selectedIndex = resourceRandom.nextInt(
+                                neededResourceIndexes.size());
+
+                int resourceIndex = neededResourceIndexes.get(selectedIndex);
+
+                int[] request = new int[remainingNeed.length];
+
+                request[resourceIndex] = 1;
+
+                resourceRequestCount++;
+
+                ResourceRequestResult result = resourceManager.requestResources(
+                                pcb,
+                                request);
+
+                switch (result) {
+                        case GRANTED:
+                                resourceGrantCount++;
+
+                                System.out.printf(
+                                                "[Tick %d] P%d resource request %s"
+                                                                + " GRANTED; allocation=%s%n",
+                                                clock.getCurrentTick(),
+                                                pcb.getPid(),
+                                                Arrays.toString(request),
+                                                Arrays.toString(
+                                                                resourceManager.getAllocation(pcb)));
+
+                                return false;
+
+                        case NOT_AVAILABLE:
+                                resourceBlockCount++;
+
+                                System.out.printf(
+                                                "[Tick %d] P%d resource request %s"
+                                                                + " NOT AVAILABLE%n",
+                                                clock.getCurrentTick(),
+                                                pcb.getPid(),
+                                                Arrays.toString(request));
+
+                                blockForResources(pcb, request);
+
+                                return true;
+
+                        case EXCEEDS_MAXIMUM:
+                                throw new IllegalStateException(
+                                                "Generated request exceeds remaining"
+                                                                + " need of P" + pcb.getPid());
+
+                        default:
+                                throw new IllegalStateException(
+                                                "Unknown resource request result: "
+                                                                + result);
+                }
+        }
+
+        private void blockForResources(
+                        PCB pcb,
+                        int[] request) {
 
                 pcb.setWaitReason(WaitReason.RESOURCE);
                 pcb.setState(ProcessState.WAITING);
@@ -504,7 +625,7 @@ public class CPUScheduler implements Runnable {
                                                 + " for resources %s%n",
                                 clock.getCurrentTick(),
                                 pcb.getPid(),
-                                java.util.Arrays.toString(request));
+                                Arrays.toString(request));
 
                 detectAndRecoverDeadlock();
         }
@@ -593,17 +714,21 @@ public class CPUScheduler implements Runnable {
                         if (result == ResourceRequestResult.GRANTED) {
                                 resourceWaitQueue.removeRequest(waitRequest);
 
+                                resourceGrantCount++;
+
                                 pcb.setWaitReason(WaitReason.NONE);
                                 pcb.setState(ProcessState.READY);
 
                                 readyQueues.addToReadyQueue(pcb);
 
                                 System.out.printf(
-                                                "[Tick %d] Resource request for P%d"
-                                                                + " was granted; process returned"
+                                                "[Tick %d] Waiting request for P%d %s"
+                                                                + " was GRANTED; process returned"
                                                                 + " to READY%n",
                                                 clock.getCurrentTick(),
-                                                pcb.getPid());
+                                                pcb.getPid(),
+                                                Arrays.toString(
+                                                                waitRequest.getRequest()));
                         } else if (result == ResourceRequestResult.EXCEEDS_MAXIMUM) {
 
                                 throw new IllegalStateException(
@@ -612,6 +737,7 @@ public class CPUScheduler implements Runnable {
                                                                 + " maximum demand");
                         }
                 }
+
         }
 
         private String formatProcessIds(
@@ -648,12 +774,12 @@ public class CPUScheduler implements Runnable {
                                 "[Tick %d] CPU=%s"
                                                 + " | Quantum=%s"
                                                 + " | %s"
-                                                + " | Memory=%d/%d used"
+                                                + " | Memory=%d/%d"
                                                 + " | TLB=%dH/%dM"
                                                 + " | Faults=%d"
                                                 + " | Disk=%s"
-                                                + " | Available=%s"
-                                                + " | ResourceWait=%d"
+                                                + " | Resources=%s"
+                                                + " | ResWait=%d"
                                                 + " | Deadlocks=%d%n",
                                 tick,
                                 cpuStatus,

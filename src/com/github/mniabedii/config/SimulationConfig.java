@@ -30,6 +30,9 @@ public final class SimulationConfig {
     public static final int FRAME_COUNT = 12;
     public static final int TLB_CAPACITY = 3;
 
+    public static final int RESOURCE_REQUEST_CHANCE_PERCENT = 30;
+    public static final long RESOURCE_RANDOM_SEED = 4042L;
+
     public static final PageReplacementPolicy PAGE_REPLACEMENT_POLICY = PageReplacementPolicy.FIFO;
 
     private static final int[] TOTAL_RESOURCES = { 2, 1, 3 };
