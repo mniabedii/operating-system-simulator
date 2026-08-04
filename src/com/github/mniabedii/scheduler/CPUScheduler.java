@@ -62,6 +62,13 @@ public class CPUScheduler implements Runnable {
         private int resourceGrantCount;
         private int resourceBlockCount;
 
+        private int cpuExecutionTickCount;
+        private int idleTickCount;
+        private int contextSwitchTickCount;
+        private int tlbPenaltyTickCount;
+
+        private final List<PCB> completedProcesses;
+
         public CPUScheduler(
                         SimulationClock clock,
                         ReadyQueue readyQueues,
@@ -146,6 +153,13 @@ public class CPUScheduler implements Runnable {
                 this.resourceRequestCount = 0;
                 this.resourceGrantCount = 0;
                 this.resourceBlockCount = 0;
+
+                this.cpuExecutionTickCount = 0;
+                this.idleTickCount = 0;
+                this.contextSwitchTickCount = 0;
+                this.tlbPenaltyTickCount = 0;
+
+                this.completedProcesses = new ArrayList<>();
         }
 
         @Override
@@ -164,6 +178,7 @@ public class CPUScheduler implements Runnable {
                                         PCB nextProcess = readyQueues.takeNextProcess();
 
                                         if (nextProcess == null) {
+                                                idleTickCount++;
                                                 advanceOneTick("IDLE");
                                                 continue;
                                         }
@@ -220,6 +235,37 @@ public class CPUScheduler implements Runnable {
 
         public int getResourceBlockCount() {
                 return resourceBlockCount;
+        }
+
+        public int getCpuExecutionTickCount() {
+                return cpuExecutionTickCount;
+        }
+
+        public int getIdleTickCount() {
+                return idleTickCount;
+        }
+
+        public int getContextSwitchTickCount() {
+                return contextSwitchTickCount;
+        }
+
+        public int getTlbPenaltyTickCount() {
+                return tlbPenaltyTickCount;
+        }
+
+        public List<PCB> getCompletedProcessesSnapshot() {
+                return new ArrayList<>(completedProcesses);
+        }
+
+        public double getCpuUtilization() {
+                int totalTicks = clock.getCurrentTick();
+
+                if (totalTicks == 0) {
+                        return 0.0;
+                }
+
+                return (double) cpuExecutionTickCount
+                                / totalTicks;
         }
 
         private String determinePreemptionReason() {
@@ -308,6 +354,8 @@ public class CPUScheduler implements Runnable {
 
                 for (int tick = 1; tick <= SimulationConfig.CONTEXT_SWITCH_TICKS; tick++) {
 
+                        contextSwitchTickCount++;
+
                         advanceOneTick(
                                         "CONTEXT_SWITCH "
                                                         + tick
@@ -320,6 +368,7 @@ public class CPUScheduler implements Runnable {
                 pcb.resetReadyWaitTicks();
                 interactiveQuantumUsed = 0;
                 pcb.setState(ProcessState.RUNNING);
+                pcb.recordFirstRunTick(clock.getCurrentTick());
                 runningProcess = pcb;
 
                 System.out.printf(
@@ -340,6 +389,7 @@ public class CPUScheduler implements Runnable {
                                 0);
 
                 if (result.isTlbMiss()) {
+                        tlbPenaltyTickCount++;
                         advanceOneTick(
                                         "P" + pcb.getPid()
                                                         + " TLB_MISS"
@@ -363,6 +413,7 @@ public class CPUScheduler implements Runnable {
                 }
 
                 pcb.executeOneTick();
+                cpuExecutionTickCount++;
 
                 if (pcb.getSchedulingLevel() == SchedulingLevel.INTERACTIVE) {
 
@@ -420,6 +471,8 @@ public class CPUScheduler implements Runnable {
                 resourceManager.releaseAllResources(pcb);
 
                 pcb.setWaitReason(WaitReason.NONE);
+                pcb.recordCompletionTick(
+                                clock.getCurrentTick());
                 pcb.setState(ProcessState.TERMINATED);
 
                 terminatedProcessCount++;
@@ -682,8 +735,13 @@ public class CPUScheduler implements Runnable {
 
                 resourceManager.releaseAllResources(victim);
 
+                victim.recordCompletionTick(
+                                clock.getCurrentTick());
+
                 victim.setWaitReason(WaitReason.NONE);
                 victim.setState(ProcessState.TERMINATED);
+
+                completedProcesses.add(victim);
 
                 terminatedProcessCount++;
                 deadlockVictimCount++;

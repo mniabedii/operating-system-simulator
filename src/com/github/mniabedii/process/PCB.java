@@ -27,6 +27,10 @@ public class PCB {
 
     private volatile WaitReason waitReason;
 
+    private int firstRunTick;
+    private int completionTick;
+    private int totalReadyWaitTicks;
+
     public PCB(
             int pid,
             ProcessType type,
@@ -86,6 +90,10 @@ public class PCB {
         this.maxResourceDemand = Arrays.copyOf(maxResourceDemand, maxResourceDemand.length);
         this.state = ProcessState.NEW;
         this.waitReason = waitReason.NONE;
+
+        this.firstRunTick = -1;
+        this.completionTick = -1;
+        this.totalReadyWaitTicks = 0;
     }
 
     // setters & getters
@@ -128,6 +136,7 @@ public class PCB {
         }
 
         readyWaitTicks++;
+        totalReadyWaitTicks++;
     }
 
     public synchronized void resetReadyWaitTicks() {
@@ -249,6 +258,67 @@ public class PCB {
 
     public synchronized boolean isFinished() {
         return remainingBurstTime == 0;
+    }
+
+    public synchronized void recordFirstRunTick(int tick) {
+        if (tick < arrivalTime) {
+            throw new IllegalArgumentException(
+                    "First run tick cannot precede arrival");
+        }
+
+        if (firstRunTick == -1) {
+            firstRunTick = tick;
+        }
+    }
+
+    public synchronized void recordCompletionTick(int tick) {
+        if (tick < arrivalTime) {
+            throw new IllegalArgumentException(
+                    "Completion tick cannot precede arrival");
+        }
+
+        if (completionTick != -1) {
+            throw new IllegalStateException(
+                    "Completion tick already recorded for P" + pid);
+        }
+
+        completionTick = tick;
+    }
+
+    public synchronized boolean hasStarted() {
+        return firstRunTick >= 0;
+    }
+
+    public synchronized boolean hasCompleted() {
+        return completionTick >= 0;
+    }
+
+    public synchronized int getFirstRunTick() {
+        return firstRunTick;
+    }
+
+    public synchronized int getCompletionTick() {
+        return completionTick;
+    }
+
+    public synchronized int getTotalReadyWaitTicks() {
+        return totalReadyWaitTicks;
+    }
+
+    public synchronized int getResponseTime() {
+        if (!hasStarted()) {
+            return -1;
+        }
+
+        return firstRunTick - arrivalTime;
+    }
+
+    public synchronized int getTurnaroundTime() {
+        if (!hasCompleted()) {
+            return -1;
+        }
+
+        return completionTick - arrivalTime;
     }
 
     @Override
