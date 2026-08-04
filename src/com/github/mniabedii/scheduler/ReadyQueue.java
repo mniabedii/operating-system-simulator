@@ -96,6 +96,18 @@ public class ReadyQueue {
         return backgroundQueue.size();
     }
 
+    public synchronized boolean hasSystemProcess() {
+        return !systemQueue.isEmpty();
+    }
+
+    public synchronized boolean hasInteractiveProcess() {
+        return !interactiveQueue.isEmpty();
+    }
+
+    public synchronized PCB peekShortestBackgroundProcess() {
+        return backgroundQueue.peek();
+    }
+
     public synchronized String getQueueStatus() {
         List<PCB> sortedBackground = new ArrayList<>(backgroundQueue);
 

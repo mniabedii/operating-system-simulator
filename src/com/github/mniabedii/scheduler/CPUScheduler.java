@@ -22,6 +22,7 @@ public class CPUScheduler implements Runnable {
         private final SimulationClock clock;
         private final ReadyQueue readyQueues;
         private int interactiveQuantumUsed;
+        private int preemptionCount;
         private final MMU mmu;
         private final PhysicalMemory physicalMemory;
         private final TLB tlb;
@@ -63,6 +64,7 @@ public class CPUScheduler implements Runnable {
                                 "readyQueues");
 
                 this.interactiveQuantumUsed = 0;
+                this.preemptionCount = 0;
 
                 this.mmu = Objects.requireNonNull(
                                 mmu,
@@ -104,6 +106,14 @@ public class CPUScheduler implements Runnable {
         public void run() {
                 try {
                         while (!shouldTerminate()) {
+                                String preemptionReason = determinePreemptionReason();
+
+                                if (preemptionReason != null) {
+                                        preemptCurrentProcess(preemptionReason);
+
+                                        continue;
+                                }
+
                                 if (runningProcess == null) {
                                         PCB nextProcess = readyQueues.takeNextProcess();
 
@@ -113,6 +123,7 @@ public class CPUScheduler implements Runnable {
                                         }
 
                                         dispatch(nextProcess);
+                                        continue;
                                 }
 
                                 executeCurrentProcessStep();
@@ -139,6 +150,84 @@ public class CPUScheduler implements Runnable {
 
         public PCB getRunningProcess() {
                 return runningProcess;
+        }
+
+        public int getPreemptionCount() {
+                return preemptionCount;
+        }
+
+        private String determinePreemptionReason() {
+                PCB current = runningProcess;
+
+                if (current == null) {
+                        return null;
+                }
+
+                switch (current.getType()) {
+                        case SYSTEM:
+                                return null;
+
+                        case INTERACTIVE:
+                                if (readyQueues.hasSystemProcess()) {
+                                        return "a higher-priority SYSTEM process is READY";
+                                }
+
+                                return null;
+
+                        case BACKGROUND:
+                                if (readyQueues.hasSystemProcess()) {
+                                        return "a higher-priority SYSTEM process is READY";
+                                }
+
+                                if (readyQueues.hasInteractiveProcess()) {
+                                        return "a higher-priority INTERACTIVE process is READY";
+                                }
+
+                                PCB shortestBackground = readyQueues.peekShortestBackgroundProcess();
+
+                                if (shortestBackground != null
+                                                && shortestBackground
+                                                                .getRemainingBurstTime() < current
+                                                                                .getRemainingBurstTime()) {
+
+                                        return "shorter BACKGROUND P"
+                                                        + shortestBackground.getPid()
+                                                        + " is READY with "
+                                                        + shortestBackground
+                                                                        .getRemainingBurstTime()
+                                                        + " ticks remaining";
+                                }
+
+                                return null;
+
+                        default:
+                                throw new IllegalStateException(
+                                                "Unknown process type: "
+                                                                + current.getType());
+                }
+        }
+
+        private void preemptCurrentProcess(String reason) {
+
+                PCB pcb = runningProcess;
+
+                if (pcb == null) {
+                        throw new IllegalStateException(
+                                        "No running process exists");
+                }
+
+                pcb.setState(ProcessState.READY);
+                readyQueues.addToReadyQueue(pcb);
+
+                runningProcess = null;
+                interactiveQuantumUsed = 0;
+                preemptionCount++;
+
+                System.out.printf(
+                                "[Tick %d] P%d PREEMPTED: %s%n",
+                                clock.getCurrentTick(),
+                                pcb.getPid(),
+                                reason);
         }
 
         private void dispatch(PCB pcb)
