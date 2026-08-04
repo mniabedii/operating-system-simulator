@@ -14,6 +14,11 @@ import com.github.mniabedii.memory.MemoryManager;
 import com.github.mniabedii.process.PCB;
 import com.github.mniabedii.process.ProcessState;
 import com.github.mniabedii.process.SchedulingLevel;
+import com.github.mniabedii.process.WaitReason;
+import com.github.mniabedii.resource.ResourceManager;
+import com.github.mniabedii.resource.ResourceRequestResult;
+import com.github.mniabedii.resource.ResourceWaitQueue;
+import com.github.mniabedii.resource.ResourceWaitRequest;
 
 import java.util.List;
 import java.util.Objects;
@@ -39,6 +44,9 @@ public class CPUScheduler implements Runnable {
         private int terminatedProcessCount;
         private int contextSwitchCount;
 
+        private final ResourceManager resourceManager;
+        private final ResourceWaitQueue resourceWaitQueue;
+
         public CPUScheduler(
                         SimulationClock clock,
                         ReadyQueue readyQueues,
@@ -49,7 +57,9 @@ public class CPUScheduler implements Runnable {
                         ProcessGenerator generator,
                         MemoryManager memoryManager,
                         DiskIO diskIO,
-                        int expectedProcessCount) {
+                        int expectedProcessCount,
+                        ResourceManager resourceManager,
+                        ResourceWaitQueue resourceWaitQueue) {
 
                 if (expectedProcessCount <= 0) {
                         throw new IllegalArgumentException(
@@ -101,6 +111,14 @@ public class CPUScheduler implements Runnable {
                 this.finished = false;
                 this.terminatedProcessCount = 0;
                 this.contextSwitchCount = 0;
+
+                this.resourceManager = Objects.requireNonNull(
+                                resourceManager,
+                                "resourceManager");
+
+                this.resourceWaitQueue = Objects.requireNonNull(
+                                resourceWaitQueue,
+                                "resourceWaitQueue");
         }
 
         @Override
@@ -317,6 +335,7 @@ public class CPUScheduler implements Runnable {
                         PCB pcb,
                         int pageNumber) {
 
+                pcb.setWaitReason(WaitReason.PAGE_FAULT);
                 pcb.setState(ProcessState.WAITING);
 
                 PageFaultRequest request = new PageFaultRequest(
@@ -344,11 +363,14 @@ public class CPUScheduler implements Runnable {
 
                 mmu.invalidateProcess(pcb.getPid());
                 physicalMemory.releaseProcess(pcb);
+                resourceManager.releaseAllResources(pcb);
 
                 terminatedProcessCount++;
 
                 runningProcess = null;
                 interactiveQuantumUsed = 0;
+
+                retryResourceWaiters();
 
                 System.out.printf(
                                 "[Tick %d] P%d TERMINATED"
@@ -439,6 +461,64 @@ public class CPUScheduler implements Runnable {
                                                 + " and returned to READY%n",
                                 clock.getCurrentTick(),
                                 pcb.getPid());
+        }
+
+        private void blockForResources(PCB pcb, int[] request) {
+
+                pcb.setWaitReason(WaitReason.RESOURCE);
+                pcb.setState(ProcessState.WAITING);
+
+                ResourceWaitRequest waitRequest = new ResourceWaitRequest(
+                                pcb,
+                                request,
+                                clock.getCurrentTick());
+
+                resourceWaitQueue.addRequest(waitRequest);
+
+                runningProcess = null;
+                interactiveQuantumUsed = 0;
+
+                System.out.printf(
+                                "[Tick %d] P%d entered WAITING"
+                                                + " for resources %s%n",
+                                clock.getCurrentTick(),
+                                pcb.getPid(),
+                                java.util.Arrays.toString(request));
+        }
+
+        private void retryResourceWaiters() {
+                List<ResourceWaitRequest> waitingRequests = resourceWaitQueue.getSnapshot();
+
+                for (ResourceWaitRequest waitRequest : waitingRequests) {
+
+                        PCB pcb = waitRequest.getPCB();
+
+                        ResourceRequestResult result = resourceManager.requestResources(
+                                        pcb,
+                                        waitRequest.getRequest());
+
+                        if (result == ResourceRequestResult.GRANTED) {
+                                resourceWaitQueue.removeRequest(waitRequest);
+
+                                pcb.setWaitReason(WaitReason.NONE);
+                                pcb.setState(ProcessState.READY);
+
+                                readyQueues.addToReadyQueue(pcb);
+
+                                System.out.printf(
+                                                "[Tick %d] Resource request for P%d"
+                                                                + " was granted; process returned"
+                                                                + " to READY%n",
+                                                clock.getCurrentTick(),
+                                                pcb.getPid());
+                        } else if (result == ResourceRequestResult.EXCEEDS_MAXIMUM) {
+
+                                throw new IllegalStateException(
+                                                "Stored resource request exceeds"
+                                                                + " P" + pcb.getPid()
+                                                                + " maximum demand");
+                        }
+                }
         }
 
         private void printTickStatus(

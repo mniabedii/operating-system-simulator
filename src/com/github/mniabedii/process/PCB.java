@@ -25,6 +25,8 @@ public class PCB {
     private final List<Integer> pageReferenceString;
     private final int[] maxResourceDemand;
 
+    private volatile WaitReason waitReason;
+
     public PCB(
             int pid,
             ProcessType type,
@@ -83,6 +85,7 @@ public class PCB {
         this.pageReferenceString = List.copyOf(pageReferenceString);
         this.maxResourceDemand = Arrays.copyOf(maxResourceDemand, maxResourceDemand.length);
         this.state = ProcessState.NEW;
+        this.waitReason = waitReason.NONE;
     }
 
     // setters & getters
@@ -211,6 +214,19 @@ public class PCB {
         this.state = state;
     }
 
+    public WaitReason getWaitReason() {
+        return waitReason;
+    }
+
+    public void setWaitReason(WaitReason waitReason) {
+        if (waitReason == null) {
+            throw new IllegalArgumentException(
+                    "Wait reason cannot be null");
+        }
+
+        this.waitReason = waitReason;
+    }
+
     // other process functions
     public synchronized void executeOneTick() {
         if (remainingBurstTime > 0) {
@@ -241,6 +257,7 @@ public class PCB {
                 + "{type=" + type
                 + ", level=" + schedulingLevel
                 + ", state=" + state
+                + ", waitReason=" + waitReason
                 + ", remaining=" + remainingBurstTime
                 + ", readyWait=" + readyWaitTicks
                 + '}';

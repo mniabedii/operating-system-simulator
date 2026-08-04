@@ -4,6 +4,8 @@ import com.github.mniabedii.buffer.ProcessBuffer;
 import com.github.mniabedii.clock.SimulationClock;
 import com.github.mniabedii.process.PCB;
 import com.github.mniabedii.process.ProcessState;
+import com.github.mniabedii.process.WaitReason;
+import com.github.mniabedii.resource.ResourceManager;
 import com.github.mniabedii.scheduler.ReadyQueue;
 
 import java.util.Objects;
@@ -13,13 +15,15 @@ public class MemoryManager implements Runnable {
     private final ProcessBuffer processBuffer;
     private final ReadyQueue readyQueues;
     private final SimulationClock clock;
+    private final ResourceManager resourceManager;
 
     private volatile boolean finished;
 
     public MemoryManager(
             ProcessBuffer processBuffer,
             ReadyQueue readyQueues,
-            SimulationClock clock) {
+            SimulationClock clock,
+            ResourceManager resourceManager) {
 
         this.processBuffer = Objects.requireNonNull(
                 processBuffer,
@@ -32,6 +36,10 @@ public class MemoryManager implements Runnable {
         this.clock = Objects.requireNonNull(
                 clock,
                 "clock");
+
+        this.resourceManager = Objects.requireNonNull(
+                resourceManager,
+                "resourceManager");
 
         this.finished = false;
     }
@@ -63,6 +71,9 @@ public class MemoryManager implements Runnable {
         PageTable pageTable = new PageTable(pcb.getRequiredPages());
 
         pcb.setPageTable(pageTable);
+        resourceManager.registerProcess(pcb);
+
+        pcb.setWaitReason(WaitReason.NONE);
         pcb.setState(ProcessState.READY);
 
         readyQueues.addToReadyQueue(pcb);

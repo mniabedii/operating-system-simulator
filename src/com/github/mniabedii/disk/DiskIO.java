@@ -5,6 +5,7 @@ import com.github.mniabedii.config.SimulationConfig;
 import com.github.mniabedii.memory.PhysicalMemory;
 import com.github.mniabedii.process.PCB;
 import com.github.mniabedii.process.ProcessState;
+import com.github.mniabedii.process.WaitReason;
 import com.github.mniabedii.scheduler.ReadyQueue;
 import com.github.mniabedii.memory.MMU;
 import com.github.mniabedii.memory.PageReplacementResult;
@@ -113,6 +114,7 @@ public class DiskIO implements Runnable {
 
                 loadRequestedPage(pcb, pageNumber);
 
+                pcb.setWaitReason(WaitReason.NONE);
                 pcb.setState(ProcessState.READY);
                 readyQueues.addToReadyQueue(pcb);
 
