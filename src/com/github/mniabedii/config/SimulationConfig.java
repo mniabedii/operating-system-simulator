@@ -5,7 +5,7 @@ import java.util.Arrays;
 public final class SimulationConfig {
 
     public static final int MAX_PROCESSES = 15;
-    public static final int PROCESS_BUFFER_CAPACITY = 15;
+    public static final int PROCESS_BUFFER_CAPACITY = 7;
 
     public static final int MIN_GENERATION_INTERVAL = 1;
     public static final int MAX_GENERATION_INTERVAL = 3;

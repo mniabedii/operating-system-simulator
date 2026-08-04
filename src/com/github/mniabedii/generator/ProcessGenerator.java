@@ -52,6 +52,7 @@ public class ProcessGenerator implements Runnable {
             Thread.currentThread().interrupt();
         } finally {
             finished = true;
+            processBuffer.closeBuffer();
         }
     }
 

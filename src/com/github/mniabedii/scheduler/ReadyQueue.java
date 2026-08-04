@@ -31,7 +31,10 @@ public class ReadyQueue {
     public synchronized void addToReadyQueue(PCB pcb) {
         Objects.requireNonNull(pcb, "pcb");
 
-        pcb.setState(ProcessState.READY);
+        if (pcb.getState() != ProcessState.READY) {
+            throw new IllegalArgumentException(
+                    "Only READY processes can enter a ready queue");
+        }
 
         switch (pcb.getType()) {
             case SYSTEM:

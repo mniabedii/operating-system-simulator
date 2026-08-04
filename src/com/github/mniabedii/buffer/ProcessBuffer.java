@@ -11,6 +11,8 @@ public class ProcessBuffer {
     private final Queue<PCB> queue;
     private final int capacity;
 
+    private boolean closed;
+
     public ProcessBuffer(int capacity) {
         if (capacity <= 0) {
             throw new IllegalArgumentException(
@@ -19,32 +21,51 @@ public class ProcessBuffer {
 
         this.capacity = capacity;
         this.queue = new ArrayDeque<>();
+        this.closed = false;
     }
 
-    public synchronized void putOnBuffer(PCB process)
+    public synchronized void putOnBuffer(PCB pcb)
             throws InterruptedException {
 
-        Objects.requireNonNull(process, "process");
+        Objects.requireNonNull(pcb, "pcb");
 
-        while (queue.size() >= capacity) {
+        while (queue.size() >= capacity && !closed) {
             wait();
         }
 
-        queue.offer(process);
+        if (closed) {
+            throw new IllegalStateException(
+                    "Cannot add to a closed buffer");
+        }
+
+        queue.offer(pcb);
         notifyAll();
     }
 
     public synchronized PCB takeFromBuffer()
             throws InterruptedException {
 
-        while (queue.isEmpty()) {
+        while (queue.isEmpty() && !closed) {
             wait();
         }
 
-        PCB process = queue.poll();
+        if (queue.isEmpty()) {
+            return null;
+        }
+
+        PCB pcb = queue.poll();
         notifyAll();
 
-        return process;
+        return pcb;
+    }
+
+    public synchronized void closeBuffer() {
+        closed = true;
+        notifyAll();
+    }
+
+    public synchronized boolean isClosed() {
+        return closed;
     }
 
     public synchronized int size() {
