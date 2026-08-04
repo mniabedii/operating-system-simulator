@@ -1,5 +1,9 @@
 package com.github.mniabedii.memory;
 
+import com.github.mniabedii.process.PCB;
+
+import java.util.Objects;
+
 public class Frame {
 
     public static final int NO_PROCESS = -1;
@@ -7,7 +11,7 @@ public class Frame {
 
     private final int frameNumber;
 
-    private int processId;
+    private PCB pcb;
     private int pageNumber;
 
     public Frame(int frameNumber) {
@@ -17,7 +21,7 @@ public class Frame {
         }
 
         this.frameNumber = frameNumber;
-        this.processId = NO_PROCESS;
+        this.pcb = null;
         this.pageNumber = NO_PAGE;
     }
 
@@ -26,7 +30,20 @@ public class Frame {
     }
 
     public synchronized int getProcessId() {
-        return processId;
+        if (pcb == null) {
+            return NO_PROCESS;
+        }
+
+        return pcb.getPid();
+    }
+
+    public synchronized PCB getPCB() {
+        if (pcb == null) {
+            throw new IllegalStateException(
+                    "Frame " + frameNumber + " is free");
+        }
+
+        return pcb;
     }
 
     public synchronized int getPageNumber() {
@@ -34,17 +51,23 @@ public class Frame {
     }
 
     public synchronized boolean isFree() {
-        return processId == NO_PROCESS;
+        return pcb == null;
     }
 
-    public synchronized void load(
+    public synchronized boolean contains(
             int processId,
             int pageNumber) {
 
-        if (processId <= 0) {
-            throw new IllegalArgumentException(
-                    "PID must be positive");
-        }
+        return pcb != null
+                && pcb.getPid() == processId
+                && this.pageNumber == pageNumber;
+    }
+
+    public synchronized void load(
+            PCB pcb,
+            int pageNumber) {
+
+        Objects.requireNonNull(pcb, "pcb");
 
         if (pageNumber < 0) {
             throw new IllegalArgumentException(
@@ -57,21 +80,13 @@ public class Frame {
                             + " is already occupied");
         }
 
-        this.processId = processId;
+        this.pcb = pcb;
         this.pageNumber = pageNumber;
     }
 
     public synchronized void clear() {
-        this.processId = NO_PROCESS;
+        this.pcb = null;
         this.pageNumber = NO_PAGE;
-    }
-
-    public synchronized boolean contains(
-            int processId,
-            int pageNumber) {
-
-        return this.processId == processId
-                && this.pageNumber == pageNumber;
     }
 
     @Override
@@ -81,7 +96,7 @@ public class Frame {
         }
 
         return "F" + frameNumber
-                + "{P" + processId
+                + "{P" + pcb.getPid()
                 + ", page=" + pageNumber
                 + '}';
     }

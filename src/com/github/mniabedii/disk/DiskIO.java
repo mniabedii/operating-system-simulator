@@ -6,6 +6,8 @@ import com.github.mniabedii.memory.PhysicalMemory;
 import com.github.mniabedii.process.PCB;
 import com.github.mniabedii.process.ProcessState;
 import com.github.mniabedii.scheduler.ReadyQueue;
+import com.github.mniabedii.memory.MMU;
+import com.github.mniabedii.memory.PageReplacementResult;
 
 import java.util.Objects;
 
@@ -15,6 +17,7 @@ public class DiskIO implements Runnable {
     private final PhysicalMemory physicalMemory;
     private final ReadyQueue readyQueues;
     private final SimulationClock clock;
+    private final MMU mmu;
 
     private volatile boolean busy;
     private volatile boolean finished;
@@ -23,7 +26,8 @@ public class DiskIO implements Runnable {
             PageFaultQueue pageFaultQueue,
             PhysicalMemory physicalMemory,
             ReadyQueue readyQueues,
-            SimulationClock clock) {
+            SimulationClock clock,
+            MMU mmu) {
 
         this.pageFaultQueue = Objects.requireNonNull(
                 pageFaultQueue,
@@ -40,6 +44,8 @@ public class DiskIO implements Runnable {
         this.clock = Objects.requireNonNull(
                 clock,
                 "clock");
+
+        this.mmu = mmu;
 
         this.busy = false;
         this.finished = false;
@@ -119,7 +125,9 @@ public class DiskIO implements Runnable {
             PCB pcb,
             int pageNumber) {
 
-        if (pcb.getPageTable().isPagePresent(pageNumber)) {
+        if (pcb.getPageTable()
+                .isPagePresent(pageNumber)) {
+
             return;
         }
 
@@ -127,10 +135,45 @@ public class DiskIO implements Runnable {
                 pcb,
                 pageNumber);
 
-        if (frameNumber == PhysicalMemory.NO_FREE_FRAME) {
-            throw new IllegalStateException(
-                    "Physical memory is full; "
-                            + "page replacement is required");
+        if (frameNumber != PhysicalMemory.NO_FREE_FRAME) {
+            System.out.printf(
+                    "[Tick %d] Disk placed P%d page %d"
+                            + " into free frame F%d%n",
+                    clock.getCurrentTick(),
+                    pcb.getPid(),
+                    pageNumber,
+                    frameNumber);
+
+            return;
         }
+
+        PageReplacementResult replacement = physicalMemory.replacePage(
+                pcb,
+                pageNumber);
+
+        mmu.invalidatePage(
+                replacement.getVictimProcessId(),
+                replacement.getVictimPageNumber());
+
+        if (replacement.wasVictimDirty()) {
+            System.out.printf(
+                    "[Tick %d] Disk wrote dirty"
+                            + " P%d page %d back to disk%n",
+                    clock.getCurrentTick(),
+                    replacement.getVictimProcessId(),
+                    replacement.getVictimPageNumber());
+        }
+
+        System.out.printf(
+                "[Tick %d] %s replacement used F%d:"
+                        + " removed P%d page %d"
+                        + " and loaded P%d page %d%n",
+                clock.getCurrentTick(),
+                physicalMemory.getReplacementPolicy(),
+                replacement.getFrameNumber(),
+                replacement.getVictimProcessId(),
+                replacement.getVictimPageNumber(),
+                pcb.getPid(),
+                pageNumber);
     }
 }

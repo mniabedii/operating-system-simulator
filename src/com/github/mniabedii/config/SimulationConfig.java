@@ -1,5 +1,7 @@
 package com.github.mniabedii.config;
 
+import com.github.mniabedii.memory.PageReplacementPolicy;
+
 import java.util.Arrays;
 
 public final class SimulationConfig {
@@ -25,6 +27,8 @@ public final class SimulationConfig {
 
     public static final int FRAME_COUNT = 12;
     public static final int TLB_CAPACITY = 3;
+
+    public static final PageReplacementPolicy PAGE_REPLACEMENT_POLICY = PageReplacementPolicy.FIFO;
 
     private static final int[] TOTAL_RESOURCES = { 2, 1, 3 };
 
