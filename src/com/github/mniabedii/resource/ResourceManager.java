@@ -2,8 +2,10 @@ package com.github.mniabedii.resource;
 
 import com.github.mniabedii.process.PCB;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -246,5 +248,14 @@ public class ResourceManager {
                         "Total resources cannot be negative");
             }
         }
+    }
+
+    public synchronized List<PCB> getRegisteredProcessesSnapshot() {
+
+        return new ArrayList<>(processes.values());
+    }
+
+    public synchronized int getRegisteredProcessCount() {
+        return processes.size();
     }
 }

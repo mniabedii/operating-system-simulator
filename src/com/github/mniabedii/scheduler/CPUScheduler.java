@@ -15,11 +15,13 @@ import com.github.mniabedii.process.PCB;
 import com.github.mniabedii.process.ProcessState;
 import com.github.mniabedii.process.SchedulingLevel;
 import com.github.mniabedii.process.WaitReason;
+import com.github.mniabedii.resource.DeadlockDetector;
 import com.github.mniabedii.resource.ResourceManager;
 import com.github.mniabedii.resource.ResourceRequestResult;
 import com.github.mniabedii.resource.ResourceWaitQueue;
 import com.github.mniabedii.resource.ResourceWaitRequest;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -46,6 +48,11 @@ public class CPUScheduler implements Runnable {
 
         private final ResourceManager resourceManager;
         private final ResourceWaitQueue resourceWaitQueue;
+
+        private final DeadlockDetector deadlockDetector;
+
+        private int deadlockCount;
+        private int deadlockVictimCount;
 
         public CPUScheduler(
                         SimulationClock clock,
@@ -119,6 +126,11 @@ public class CPUScheduler implements Runnable {
                 this.resourceWaitQueue = Objects.requireNonNull(
                                 resourceWaitQueue,
                                 "resourceWaitQueue");
+
+                this.deadlockDetector = new DeadlockDetector();
+
+                this.deadlockCount = 0;
+                this.deadlockVictimCount = 0;
         }
 
         @Override
@@ -173,6 +185,14 @@ public class CPUScheduler implements Runnable {
 
         public int getPreemptionCount() {
                 return preemptionCount;
+        }
+
+        public int getDeadlockCount() {
+                return deadlockCount;
+        }
+
+        public int getDeadlockVictimCount() {
+                return deadlockVictimCount;
         }
 
         private String determinePreemptionReason() {
@@ -387,6 +407,7 @@ public class CPUScheduler implements Runnable {
                                 && memoryManager.isFinished()
                                 && runningProcess == null
                                 && readyQueues.isEmpty()
+                                && resourceWaitQueue.isEmpty()
                                 && !pageFaultQueue.hasPendingWork()
                                 && !diskIO.isBusy();
         }
@@ -484,6 +505,78 @@ public class CPUScheduler implements Runnable {
                                 clock.getCurrentTick(),
                                 pcb.getPid(),
                                 java.util.Arrays.toString(request));
+
+                detectAndRecoverDeadlock();
+        }
+
+        private void detectAndRecoverDeadlock() {
+                boolean countedThisEvent = false;
+
+                while (true) {
+                        List<PCB> deadlockedProcesses = deadlockDetector
+                                        .detectDeadlockedProcesses(
+                                                        resourceManager,
+                                                        resourceWaitQueue);
+
+                        if (deadlockedProcesses.isEmpty()) {
+                                return;
+                        }
+
+                        if (!countedThisEvent) {
+                                deadlockCount++;
+                                countedThisEvent = true;
+                        }
+
+                        System.out.printf(
+                                        "[Tick %d] DEADLOCK detected among %s%n",
+                                        clock.getCurrentTick(),
+                                        formatProcessIds(deadlockedProcesses));
+
+                        PCB victim = deadlockDetector.selectVictim(
+                                        deadlockedProcesses,
+                                        resourceManager);
+
+                        recoverDeadlockVictim(victim);
+                }
+        }
+
+        private void recoverDeadlockVictim(PCB victim) {
+                ResourceWaitRequest removedRequest = resourceWaitQueue.removeProcess(
+                                victim.getPid());
+
+                if (removedRequest == null) {
+                        throw new IllegalStateException(
+                                        "Deadlock victim P"
+                                                        + victim.getPid()
+                                                        + " has no pending request");
+                }
+
+                int[] releasedResources = resourceManager.getAllocation(victim);
+
+                mmu.invalidateProcess(victim.getPid());
+
+                if (victim.hasPageTable()) {
+                        physicalMemory.releaseProcess(victim);
+                }
+
+                resourceManager.releaseAllResources(victim);
+
+                victim.setWaitReason(WaitReason.NONE);
+                victim.setState(ProcessState.TERMINATED);
+
+                terminatedProcessCount++;
+                deadlockVictimCount++;
+
+                System.out.printf(
+                                "[Tick %d] DEADLOCK RECOVERY:"
+                                                + " terminated victim P%d"
+                                                + " and released %s%n",
+                                clock.getCurrentTick(),
+                                victim.getPid(),
+                                java.util.Arrays.toString(
+                                                releasedResources));
+
+                retryResourceWaiters();
         }
 
         private void retryResourceWaiters() {
@@ -521,6 +614,23 @@ public class CPUScheduler implements Runnable {
                 }
         }
 
+        private String formatProcessIds(
+                        List<PCB> processes) {
+
+                StringBuilder result = new StringBuilder();
+
+                for (PCB pcb : processes) {
+                        if (result.length() > 0) {
+                                result.append(", ");
+                        }
+
+                        result.append('P')
+                                        .append(pcb.getPid());
+                }
+
+                return result.toString();
+        }
+
         private void printTickStatus(
                         int tick,
                         String cpuStatus) {
@@ -541,7 +651,10 @@ public class CPUScheduler implements Runnable {
                                                 + " | Memory=%d/%d used"
                                                 + " | TLB=%dH/%dM"
                                                 + " | Faults=%d"
-                                                + " | Disk=%s%n",
+                                                + " | Disk=%s"
+                                                + " | Available=%s"
+                                                + " | ResourceWait=%d"
+                                                + " | Deadlocks=%d%n",
                                 tick,
                                 cpuStatus,
                                 quantumStatus,
@@ -551,6 +664,10 @@ public class CPUScheduler implements Runnable {
                                 tlb.getHitCount(),
                                 tlb.getMissCount(),
                                 mmu.getPageFaultCount(),
-                                diskIO.isBusy() ? "BUSY" : "IDLE");
+                                diskIO.isBusy() ? "BUSY" : "IDLE",
+                                Arrays.toString(
+                                                resourceManager.getAvailableResources()),
+                                resourceWaitQueue.size(),
+                                deadlockCount);
         }
 }

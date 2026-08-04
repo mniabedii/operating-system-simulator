@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.Iterator;
 
 public class ResourceWaitQueue {
 
@@ -73,5 +74,32 @@ public class ResourceWaitQueue {
         }
 
         return result.toString();
+    }
+
+    public synchronized ResourceWaitRequest getRequestForProcess(int processId) {
+
+        for (ResourceWaitRequest request : requests) {
+            if (request.getPCB().getPid() == processId) {
+                return request;
+            }
+        }
+
+        return null;
+    }
+
+    public synchronized ResourceWaitRequest removeProcess(int processId) {
+
+        Iterator<ResourceWaitRequest> iterator = requests.iterator();
+
+        while (iterator.hasNext()) {
+            ResourceWaitRequest request = iterator.next();
+
+            if (request.getPCB().getPid() == processId) {
+                iterator.remove();
+                return request;
+            }
+        }
+
+        return null;
     }
 }
