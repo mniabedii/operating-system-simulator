@@ -66,6 +66,14 @@ public class Frame {
         this.pageNumber = NO_PAGE;
     }
 
+    public synchronized boolean contains(
+            int processId,
+            int pageNumber) {
+
+        return this.processId == processId
+                && this.pageNumber == pageNumber;
+    }
+
     @Override
     public synchronized String toString() {
         if (isFree()) {
