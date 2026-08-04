@@ -22,6 +22,7 @@ public class DiskIO implements Runnable {
 
         private volatile boolean busy;
         private volatile boolean finished;
+        private volatile int completedOperationCount;
 
         public DiskIO(
                         PageFaultQueue pageFaultQueue,
@@ -50,6 +51,7 @@ public class DiskIO implements Runnable {
 
                 this.busy = false;
                 this.finished = false;
+                this.completedOperationCount = 0;
         }
 
         @Override
@@ -66,6 +68,7 @@ public class DiskIO implements Runnable {
 
                                 try {
                                         processRequest(request);
+                                        completedOperationCount++;
                                 } finally {
                                         busy = false;
                                         pageFaultQueue.completeRequest();
@@ -85,6 +88,10 @@ public class DiskIO implements Runnable {
 
         public boolean isFinished() {
                 return finished;
+        }
+
+        public int getCompletedOperationCount() {
+                return completedOperationCount;
         }
 
         private void processRequest(

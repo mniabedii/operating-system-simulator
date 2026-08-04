@@ -68,6 +68,7 @@ public class CPUScheduler implements Runnable {
         private int tlbPenaltyTickCount;
 
         private final List<PCB> completedProcesses;
+        private String pendingDeadlockStatus;
 
         public CPUScheduler(
                         SimulationClock clock,
@@ -160,6 +161,7 @@ public class CPUScheduler implements Runnable {
                 this.tlbPenaltyTickCount = 0;
 
                 this.completedProcesses = new ArrayList<>();
+                this.pendingDeadlockStatus = "NONE";
         }
 
         @Override
@@ -706,6 +708,11 @@ public class CPUScheduler implements Runnable {
                                         clock.getCurrentTick(),
                                         formatProcessIds(deadlockedProcesses));
 
+                        appendDeadlockStatus(
+                                        "DETECTED["
+                                                        + formatProcessIds(deadlockedProcesses)
+                                                        + "]");
+
                         PCB victim = deadlockDetector.selectVictim(
                                         deadlockedProcesses,
                                         resourceManager);
@@ -717,6 +724,10 @@ public class CPUScheduler implements Runnable {
         private void recoverDeadlockVictim(PCB victim) {
                 ResourceWaitRequest removedRequest = resourceWaitQueue.removeProcess(
                                 victim.getPid());
+
+                appendDeadlockStatus(
+                                "RECOVERED victim=P"
+                                                + victim.getPid());
 
                 if (removedRequest == null) {
                         throw new IllegalStateException(
@@ -815,43 +826,177 @@ public class CPUScheduler implements Runnable {
                 return result.toString();
         }
 
+        private void appendDeadlockStatus(
+                        String event) {
+
+                if ("NONE".equals(pendingDeadlockStatus)) {
+                        pendingDeadlockStatus = event;
+                } else {
+                        pendingDeadlockStatus += "; " + event;
+                }
+        }
+
         private void printTickStatus(
                         int tick,
                         String cpuStatus) {
 
+                PCB current = runningProcess;
+
+                String runningStatus;
+
+                if (current == null) {
+                        runningStatus = "NONE";
+                } else {
+                        runningStatus = "P" + current.getPid()
+                                        + "{level="
+                                        + current.getSchedulingLevel()
+                                        + ", remaining="
+                                        + current.getRemainingBurstTime()
+                                        + ", state="
+                                        + current.getState()
+                                        + "}";
+                }
+
                 String quantumStatus = "-";
 
-                if (runningProcess != null
-                                && runningProcess.getSchedulingLevel() == SchedulingLevel.INTERACTIVE) {
+                if (current != null
+                                && current.getSchedulingLevel() == SchedulingLevel.INTERACTIVE) {
 
                         quantumStatus = interactiveQuantumUsed
                                         + "/"
                                         + SimulationConfig.ROUND_ROBIN_QUANTUM;
                 }
+
+                int tlbHits = tlb.getHitCount();
+                int tlbMisses = tlb.getMissCount();
+                int tlbAccesses = tlbHits + tlbMisses;
+
+                double tlbHitRate = 0.0;
+                double tlbMissRate = 0.0;
+
+                if (tlbAccesses > 0) {
+                        tlbHitRate = (double) tlbHits
+                                        / tlbAccesses
+                                        * 100.0;
+
+                        tlbMissRate = (double) tlbMisses
+                                        / tlbAccesses
+                                        * 100.0;
+                }
+
+                double cpuUtilization = 0.0;
+
+                if (tick > 0) {
+                        cpuUtilization = (double) cpuExecutionTickCount
+                                        / tick
+                                        * 100.0;
+                }
+
+                String memoryStatus = physicalMemory
+                                .getMemoryStatus()
+                                .replace('\n', ' ')
+                                .replace('\r', ' ');
+
+                String diskStatus = diskIO.isBusy()
+                                ? "BUSY"
+                                : "IDLE";
+
+                String currentDeadlockStatus = pendingDeadlockStatus;
+
+                pendingDeadlockStatus = "NONE";
+
+                System.out.println();
                 System.out.printf(
-                                "[Tick %d] CPU=%s"
-                                                + " | Quantum=%s"
-                                                + " | %s"
-                                                + " | Memory=%d/%d"
-                                                + " | TLB=%dH/%dM"
-                                                + " | Faults=%d"
-                                                + " | Disk=%s"
-                                                + " | Resources=%s"
-                                                + " | ResWait=%d"
-                                                + " | Deadlocks=%d%n",
-                                tick,
-                                cpuStatus,
-                                quantumStatus,
-                                readyQueues.getCompactStatus(),
+                                "========== TICK %d ==========%n",
+                                tick);
+
+                // CPU status
+                System.out.printf(
+                                "CPU: %s%n",
+                                cpuStatus);
+
+                // Ready queues
+                System.out.printf(
+                                "READY Queues: %s%n",
+                                readyQueues.getCompactStatus());
+
+                // Running process
+                System.out.printf(
+                                "RUNNING: %s%n",
+                                runningStatus);
+
+                // Physical memory
+                System.out.printf(
+                                "Memory: %d/%d frames used%n",
                                 physicalMemory.getOccupiedFrameCount(),
-                                physicalMemory.getFrameCount(),
-                                tlb.getHitCount(),
-                                tlb.getMissCount(),
-                                mmu.getPageFaultCount(),
-                                diskIO.isBusy() ? "BUSY" : "IDLE",
+                                physicalMemory.getFrameCount());
+
+                System.out.printf(
+                                "Frames: %s%n",
+                                memoryStatus);
+
+                // TLB statistics
+                System.out.printf(
+                                "TLB: hits=%d, misses=%d,"
+                                                + " hitRate=%.2f%%,"
+                                                + " missRate=%.2f%%%n",
+                                tlbHits,
+                                tlbMisses,
+                                tlbHitRate,
+                                tlbMissRate);
+
+                // Page faults
+                System.out.printf(
+                                "Page Faults: %d%n",
+                                mmu.getPageFaultCount());
+
+                // Disk I/O operations
+                System.out.printf(
+                                "Disk I/O: %s,"
+                                                + " queued=%d,"
+                                                + " active=%d,"
+                                                + " completed=%d%n",
+                                diskStatus,
+                                pageFaultQueue.size(),
+                                pageFaultQueue.getActiveRequestCount(),
+                                diskIO.getCompletedOperationCount());
+
+                // Deadlock status
+                System.out.printf(
+                                "Deadlock: %s,"
+                                                + " detected=%d,"
+                                                + " victims=%d,"
+                                                + " resourceWait=%d%n",
+                                currentDeadlockStatus,
+                                deadlockCount,
+                                deadlockVictimCount,
+                                resourceWaitQueue.size());
+
+                System.out.printf(
+                                "Resources Available: %s%n",
                                 Arrays.toString(
-                                                resourceManager.getAvailableResources()),
-                                resourceWaitQueue.size(),
-                                deadlockCount);
+                                                resourceManager
+                                                                .getAvailableResources()));
+
+                // Scheduling statistics
+                System.out.printf(
+                                "Scheduling: quantum=%s,"
+                                                + " completed=%d/%d,"
+                                                + " contextSwitches=%d,"
+                                                + " preemptions=%d,"
+                                                + " executionTicks=%d,"
+                                                + " idleTicks=%d,"
+                                                + " CPUUtilization=%.2f%%%n",
+                                quantumStatus,
+                                terminatedProcessCount,
+                                expectedProcessCount,
+                                contextSwitchCount,
+                                preemptionCount,
+                                cpuExecutionTickCount,
+                                idleTickCount,
+                                cpuUtilization);
+
+                System.out.println(
+                                "==============================");
         }
 }
