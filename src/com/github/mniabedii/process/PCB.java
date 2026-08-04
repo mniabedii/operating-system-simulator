@@ -1,5 +1,7 @@
 package com.github.mniabedii.process;
 
+import com.github.mniabedii.memory.PageTable;
+
 import java.util.Arrays;
 import java.util.List;
 
@@ -12,6 +14,8 @@ public class PCB {
     private final int totalBurstTime;
     private final int priority;
     private final int requiredPages;
+
+    private PageTable pageTable;
 
     private int remainingBurstTime;
     private ProcessState state;
@@ -53,6 +57,7 @@ public class PCB {
         this.remainingBurstTime = burstTime;
         this.priority = priority;
         this.requiredPages = requiredPages;
+        this.pageTable = null;
         this.pageReferenceString = List.copyOf(pageReferenceString);
         this.maxResourceDemand = Arrays.copyOf(maxResourceDemand, maxResourceDemand.length);
         this.state = ProcessState.NEW;
@@ -85,6 +90,33 @@ public class PCB {
 
     public int getRequiredPages() {
         return requiredPages;
+    }
+
+    public boolean hasPageTable() {
+        return pageTable != null;
+    }
+
+    public PageTable getPageTable() {
+        if (pageTable == null) {
+            throw new IllegalStateException(
+                    "Page table has not been created for P" + pid);
+        }
+
+        return pageTable;
+    }
+
+    public void setPageTable(PageTable pageTable) {
+        if (pageTable == null) {
+            throw new IllegalArgumentException(
+                    "Page table cannot be null");
+        }
+
+        if (this.pageTable != null) {
+            throw new IllegalStateException(
+                    "Page table already exists for P" + pid);
+        }
+
+        this.pageTable = pageTable;
     }
 
     public ProcessState getState() {

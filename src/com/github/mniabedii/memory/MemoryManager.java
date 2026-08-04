@@ -60,14 +60,22 @@ public class MemoryManager implements Runnable {
     }
 
     private void admitProcess(PCB pcb) {
+        PageTable pageTable = new PageTable(pcb.getRequiredPages());
+
+        pcb.setPageTable(pageTable);
         pcb.setState(ProcessState.READY);
+
         readyQueues.addToReadyQueue(pcb);
 
         System.out.printf(
                 "[Tick %d] Memory Manager admitted P%d"
-                        + " to %s queue%n",
+                        + " to %s queue"
+                        + " with %d page-table entries"
+                        + " and %d loaded pages%n",
                 clock.getCurrentTick(),
                 pcb.getPid(),
-                pcb.getType());
+                pcb.getType(),
+                pageTable.getPageCount(),
+                pageTable.getPresentPageCount());
     }
 }
