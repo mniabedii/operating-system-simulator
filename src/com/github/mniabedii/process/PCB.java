@@ -58,6 +58,24 @@ public class PCB {
         this.priority = priority;
         this.requiredPages = requiredPages;
         this.pageTable = null;
+
+        if (pageReferenceString == null
+                || pageReferenceString.isEmpty()) {
+
+            throw new IllegalArgumentException(
+                    "Page reference string cannot be empty");
+        }
+
+        for (Integer pageNumber : pageReferenceString) {
+            if (pageNumber == null
+                    || pageNumber < 0
+                    || pageNumber >= requiredPages) {
+
+                throw new IllegalArgumentException(
+                        "Invalid page reference: " + pageNumber);
+            }
+        }
+
         this.pageReferenceString = List.copyOf(pageReferenceString);
         this.maxResourceDemand = Arrays.copyOf(maxResourceDemand, maxResourceDemand.length);
         this.state = ProcessState.NEW;
@@ -138,13 +156,26 @@ public class PCB {
     }
 
     // other process functions
-    public void executeOneTick() {
+    public synchronized void executeOneTick() {
         if (remainingBurstTime > 0) {
             remainingBurstTime--;
         }
     }
 
-    public boolean isFinished() {
+    public synchronized int getCurrentPageReference() {
+        if (remainingBurstTime == 0) {
+            throw new IllegalStateException(
+                    "P" + pid + " has already finished");
+        }
+
+        int executedTicks = totalBurstTime - remainingBurstTime;
+
+        int referenceIndex = executedTicks % pageReferenceString.size();
+
+        return pageReferenceString.get(referenceIndex);
+    }
+
+    public synchronized boolean isFinished() {
         return remainingBurstTime == 0;
     }
 
