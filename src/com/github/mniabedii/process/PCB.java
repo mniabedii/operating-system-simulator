@@ -89,7 +89,7 @@ public class PCB {
         this.pageReferenceString = List.copyOf(pageReferenceString);
         this.maxResourceDemand = Arrays.copyOf(maxResourceDemand, maxResourceDemand.length);
         this.state = ProcessState.NEW;
-        this.waitReason = waitReason.NONE;
+        this.waitReason = WaitReason.NONE;
 
         this.firstRunTick = -1;
         this.completionTick = -1;
