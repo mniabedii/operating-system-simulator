@@ -13,8 +13,9 @@ import com.github.mniabedii.memory.TLB;
 import com.github.mniabedii.memory.MemoryManager;
 import com.github.mniabedii.process.PCB;
 import com.github.mniabedii.process.ProcessState;
-import com.github.mniabedii.process.ProcessType;
+import com.github.mniabedii.process.SchedulingLevel;
 
+import java.util.List;
 import java.util.Objects;
 
 public class CPUScheduler implements Runnable {
@@ -163,7 +164,7 @@ public class CPUScheduler implements Runnable {
                         return null;
                 }
 
-                switch (current.getType()) {
+                switch (current.getSchedulingLevel()) {
                         case SYSTEM:
                                 return null;
 
@@ -251,8 +252,8 @@ public class CPUScheduler implements Runnable {
                                                         + pcb.getPid());
                 }
 
+                pcb.resetReadyWaitTicks();
                 interactiveQuantumUsed = 0;
-
                 pcb.setState(ProcessState.RUNNING);
                 runningProcess = pcb;
 
@@ -282,15 +283,15 @@ public class CPUScheduler implements Runnable {
                 }
 
                 if (result.isPageFault()) {
-                        blockForPageFault(
-                                        pcb,
-                                        pageNumber);
+                        blockForPageFault(pcb, pageNumber);
 
                         return;
                 }
 
                 pcb.executeOneTick();
-                if (pcb.getType() == ProcessType.INTERACTIVE) {
+
+                if (pcb.getSchedulingLevel() == SchedulingLevel.INTERACTIVE) {
+
                         interactiveQuantumUsed++;
                 }
 
@@ -304,6 +305,11 @@ public class CPUScheduler implements Runnable {
 
                 if (pcb.isFinished()) {
                         terminateCurrentProcess();
+                        return;
+                }
+
+                if (shouldEndInteractiveQuantum(pcb)) {
+                        handleInteractiveQuantumEnd(pcb);
                 }
         }
 
@@ -363,30 +369,59 @@ public class CPUScheduler implements Runnable {
                                 && !diskIO.isBusy();
         }
 
-        private void advanceOneTick(String cpuStatus)
-                        throws InterruptedException {
+        private void advanceOneTick(String cpuStatus) throws InterruptedException {
 
                 int tick = clock.advanceOneTick();
 
-                printTickStatus(
-                                tick,
-                                cpuStatus);
+                List<PCB> promotedProcesses = readyQueues.applyAging(SimulationConfig.AGING_THRESHOLD_TICKS);
+
+                printAgingPromotions(tick, promotedProcesses);
+
+                printTickStatus(tick, cpuStatus);
 
                 Thread.sleep(40);
         }
 
+        private void printAgingPromotions(
+                        int tick,
+                        List<PCB> promotedProcesses) {
+
+                for (PCB pcb : promotedProcesses) {
+                        String previousLevel;
+
+                        if (pcb.getSchedulingLevel() == SchedulingLevel.SYSTEM) {
+
+                                previousLevel = "INTERACTIVE";
+                        } else {
+                                previousLevel = "BACKGROUND";
+                        }
+
+                        System.out.printf(
+                                        "[Tick %d] AGING promoted P%d"
+                                                        + " from %s to %s%n",
+                                        tick,
+                                        pcb.getPid(),
+                                        previousLevel,
+                                        pcb.getSchedulingLevel());
+                }
+        }
+
         private boolean shouldEndInteractiveQuantum(PCB pcb) {
-                return pcb.getType() == ProcessType.INTERACTIVE
+                return pcb.getSchedulingLevel() == SchedulingLevel.INTERACTIVE
                                 && interactiveQuantumUsed >= SimulationConfig.ROUND_ROBIN_QUANTUM;
         }
 
         private void handleInteractiveQuantumEnd(PCB pcb) {
-                if (readyQueues.isEmpty()) {
+                boolean anotherEligibleProcess = readyQueues.hasSystemProcess()
+                                || readyQueues.hasInteractiveProcess();
+
+                if (!anotherEligibleProcess) {
                         interactiveQuantumUsed = 0;
 
                         System.out.printf(
                                         "[Tick %d] P%d received another quantum"
-                                                        + " because no other process is READY%n",
+                                                        + " because no SYSTEM or INTERACTIVE"
+                                                        + " process is READY%n",
                                         clock.getCurrentTick(),
                                         pcb.getPid());
 
@@ -413,7 +448,7 @@ public class CPUScheduler implements Runnable {
                 String quantumStatus = "-";
 
                 if (runningProcess != null
-                                && runningProcess.getType() == ProcessType.INTERACTIVE) {
+                                && runningProcess.getSchedulingLevel() == SchedulingLevel.INTERACTIVE) {
 
                         quantumStatus = interactiveQuantumUsed
                                         + "/"

@@ -10,6 +10,8 @@ public class PCB {
     // final
     private final int pid;
     private final ProcessType type;
+    private volatile SchedulingLevel schedulingLevel;
+    private int readyWaitTicks;
     private final int arrivalTime;
     private final int totalBurstTime;
     private final int priority;
@@ -17,7 +19,7 @@ public class PCB {
 
     private volatile PageTable pageTable;
 
-    private int remainingBurstTime;
+    private volatile int remainingBurstTime;
     private volatile ProcessState state;
 
     private final List<Integer> pageReferenceString;
@@ -52,6 +54,8 @@ public class PCB {
 
         this.pid = pid;
         this.type = type;
+        this.schedulingLevel = SchedulingLevel.fromProcessType(type);
+        this.readyWaitTicks = 0;
         this.arrivalTime = arrivalTime;
         this.totalBurstTime = burstTime;
         this.remainingBurstTime = burstTime;
@@ -98,12 +102,59 @@ public class PCB {
         return totalBurstTime;
     }
 
-    public int getRemainingBurstTime() {
+    public synchronized int getRemainingBurstTime() {
         return remainingBurstTime;
     }
 
     public int getPriority() {
         return priority;
+    }
+
+    public SchedulingLevel getSchedulingLevel() {
+        return schedulingLevel;
+    }
+
+    public synchronized int getReadyWaitTicks() {
+        return readyWaitTicks;
+    }
+
+    public synchronized void incrementReadyWaitTicks() {
+        if (state != ProcessState.READY) {
+            throw new IllegalStateException(
+                    "Only a READY process can age");
+        }
+
+        readyWaitTicks++;
+    }
+
+    public synchronized void resetReadyWaitTicks() {
+        readyWaitTicks = 0;
+    }
+
+    public synchronized boolean canBePromoted() {
+        return schedulingLevel != SchedulingLevel.SYSTEM;
+    }
+
+    public synchronized void promoteOneLevel() {
+        switch (schedulingLevel) {
+            case BACKGROUND:
+                schedulingLevel = SchedulingLevel.INTERACTIVE;
+                break;
+
+            case INTERACTIVE:
+                schedulingLevel = SchedulingLevel.SYSTEM;
+                break;
+
+            case SYSTEM:
+                throw new IllegalStateException(
+                        "A SYSTEM-level process cannot be promoted");
+
+            default:
+                throw new IllegalStateException(
+                        "Unknown scheduling level");
+        }
+
+        readyWaitTicks = 0;
     }
 
     public int getRequiredPages() {
@@ -188,8 +239,10 @@ public class PCB {
     public String toString() {
         return "P" + pid
                 + "{type=" + type
+                + ", level=" + schedulingLevel
                 + ", state=" + state
                 + ", remaining=" + remainingBurstTime
+                + ", readyWait=" + readyWaitTicks
                 + '}';
     }
 }

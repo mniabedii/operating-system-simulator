@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.Queue;
+import java.util.Iterator;
 
 public class ReadyQueue {
 
@@ -36,7 +37,9 @@ public class ReadyQueue {
                     "Only READY processes can enter a ready queue");
         }
 
-        switch (pcb.getType()) {
+        pcb.resetReadyWaitTicks();
+
+        switch (pcb.getSchedulingLevel()) {
             case SYSTEM:
                 systemQueue.offer(pcb);
                 break;
@@ -51,7 +54,8 @@ public class ReadyQueue {
 
             default:
                 throw new IllegalStateException(
-                        "Unknown process type: " + pcb.getType());
+                        "Unknown scheduling level: "
+                                + pcb.getSchedulingLevel());
         }
     }
 
@@ -70,6 +74,70 @@ public class ReadyQueue {
         }
 
         return null;
+    }
+
+    public synchronized List<PCB> applyAging(int thresholdTicks) {
+
+        if (thresholdTicks <= 0) {
+            throw new IllegalArgumentException(
+                    "Aging threshold must be positive");
+        }
+
+        List<PCB> promotedProcesses = new ArrayList<>();
+
+        ageInteractiveQueue(
+                thresholdTicks,
+                promotedProcesses);
+
+        ageBackgroundQueue(
+                thresholdTicks,
+                promotedProcesses);
+
+        return promotedProcesses;
+    }
+
+    private void ageInteractiveQueue(
+            int thresholdTicks,
+            List<PCB> promotedProcesses) {
+
+        Iterator<PCB> iterator = interactiveQueue.iterator();
+
+        while (iterator.hasNext()) {
+            PCB pcb = iterator.next();
+
+            pcb.incrementReadyWaitTicks();
+
+            if (pcb.getReadyWaitTicks() >= thresholdTicks) {
+
+                iterator.remove();
+                pcb.promoteOneLevel();
+                systemQueue.offer(pcb);
+
+                promotedProcesses.add(pcb);
+            }
+        }
+    }
+
+    private void ageBackgroundQueue(
+            int thresholdTicks,
+            List<PCB> promotedProcesses) {
+
+        Iterator<PCB> iterator = backgroundQueue.iterator();
+
+        while (iterator.hasNext()) {
+            PCB pcb = iterator.next();
+
+            pcb.incrementReadyWaitTicks();
+
+            if (pcb.getReadyWaitTicks() >= thresholdTicks) {
+
+                iterator.remove();
+                pcb.promoteOneLevel();
+                interactiveQueue.offer(pcb);
+
+                promotedProcesses.add(pcb);
+            }
+        }
     }
 
     public synchronized boolean isEmpty() {
