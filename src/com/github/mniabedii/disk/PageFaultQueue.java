@@ -9,10 +9,12 @@ public class PageFaultQueue {
     private final Queue<PageFaultRequest> requests;
 
     private boolean closed;
+    private int activeRequestCount;
 
     public PageFaultQueue() {
         this.requests = new ArrayDeque<>();
         this.closed = false;
+        this.activeRequestCount = 0;
     }
 
     public synchronized void putRequest(
@@ -40,7 +42,29 @@ public class PageFaultQueue {
             return null;
         }
 
-        return requests.poll();
+        PageFaultRequest request = requests.poll();
+        activeRequestCount++;
+
+        return request;
+    }
+
+    public synchronized void completeRequest() {
+        if (activeRequestCount <= 0) {
+            throw new IllegalStateException(
+                    "No active disk request exists");
+        }
+
+        activeRequestCount--;
+        notifyAll();
+    }
+
+    public synchronized boolean hasPendingWork() {
+        return !requests.isEmpty()
+                || activeRequestCount > 0;
+    }
+
+    public synchronized int getActiveRequestCount() {
+        return activeRequestCount;
     }
 
     public synchronized void closeQueue() {

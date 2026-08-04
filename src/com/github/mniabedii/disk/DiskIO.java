@@ -13,167 +13,170 @@ import java.util.Objects;
 
 public class DiskIO implements Runnable {
 
-    private final PageFaultQueue pageFaultQueue;
-    private final PhysicalMemory physicalMemory;
-    private final ReadyQueue readyQueues;
-    private final SimulationClock clock;
-    private final MMU mmu;
+        private final PageFaultQueue pageFaultQueue;
+        private final PhysicalMemory physicalMemory;
+        private final ReadyQueue readyQueues;
+        private final SimulationClock clock;
+        private final MMU mmu;
 
-    private volatile boolean busy;
-    private volatile boolean finished;
+        private volatile boolean busy;
+        private volatile boolean finished;
 
-    public DiskIO(
-            PageFaultQueue pageFaultQueue,
-            PhysicalMemory physicalMemory,
-            ReadyQueue readyQueues,
-            SimulationClock clock,
-            MMU mmu) {
+        public DiskIO(
+                        PageFaultQueue pageFaultQueue,
+                        PhysicalMemory physicalMemory,
+                        ReadyQueue readyQueues,
+                        SimulationClock clock,
+                        MMU mmu) {
 
-        this.pageFaultQueue = Objects.requireNonNull(
-                pageFaultQueue,
-                "pageFaultQueue");
+                this.pageFaultQueue = Objects.requireNonNull(
+                                pageFaultQueue,
+                                "pageFaultQueue");
 
-        this.physicalMemory = Objects.requireNonNull(
-                physicalMemory,
-                "physicalMemory");
+                this.physicalMemory = Objects.requireNonNull(
+                                physicalMemory,
+                                "physicalMemory");
 
-        this.readyQueues = Objects.requireNonNull(
-                readyQueues,
-                "readyQueues");
+                this.readyQueues = Objects.requireNonNull(
+                                readyQueues,
+                                "readyQueues");
 
-        this.clock = Objects.requireNonNull(
-                clock,
-                "clock");
+                this.clock = Objects.requireNonNull(
+                                clock,
+                                "clock");
 
-        this.mmu = mmu;
+                this.mmu = mmu;
 
-        this.busy = false;
-        this.finished = false;
-    }
+                this.busy = false;
+                this.finished = false;
+        }
 
-    @Override
-    public void run() {
-        try {
-            while (true) {
-                PageFaultRequest request = pageFaultQueue.takeRequest();
+        @Override
+        public void run() {
+                try {
+                        while (true) {
+                                PageFaultRequest request = pageFaultQueue.takeRequest();
 
-                if (request == null) {
-                    break;
+                                if (request == null) {
+                                        break;
+                                }
+
+                                busy = true;
+
+                                try {
+                                        processRequest(request);
+                                } finally {
+                                        busy = false;
+                                        pageFaultQueue.completeRequest();
+                                }
+                        }
+                } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                } finally {
+                        busy = false;
+                        finished = true;
+                }
+        }
+
+        public boolean isBusy() {
+                return busy;
+        }
+
+        public boolean isFinished() {
+                return finished;
+        }
+
+        private void processRequest(
+                        PageFaultRequest request)
+                        throws InterruptedException {
+
+                PCB pcb = request.getPCB();
+                int pageNumber = request.getPageNumber();
+
+                if (pcb.getState() != ProcessState.WAITING) {
+                        throw new IllegalStateException(
+                                        "P" + pcb.getPid()
+                                                        + " must be WAITING during disk I/O");
                 }
 
-                processRequest(request);
-            }
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-        } finally {
-            busy = false;
-            finished = true;
-        }
-    }
+                int startTick = clock.getCurrentTick();
+                int completionTick = startTick + SimulationConfig.DISK_IO_TICKS;
 
-    public boolean isBusy() {
-        return busy;
-    }
+                System.out.printf(
+                                "[Tick %d] Disk started loading"
+                                                + " page %d for P%d%n",
+                                startTick,
+                                pageNumber,
+                                pcb.getPid());
 
-    public boolean isFinished() {
-        return finished;
-    }
+                clock.waitUntilTick(completionTick);
 
-    private void processRequest(
-            PageFaultRequest request)
-            throws InterruptedException {
+                loadRequestedPage(pcb, pageNumber);
 
-        PCB pcb = request.getPCB();
-        int pageNumber = request.getPageNumber();
+                pcb.setState(ProcessState.READY);
+                readyQueues.addToReadyQueue(pcb);
 
-        if (pcb.getState() != ProcessState.WAITING) {
-            throw new IllegalStateException(
-                    "P" + pcb.getPid()
-                            + " must be WAITING during disk I/O");
+                System.out.printf(
+                                "[Tick %d] Disk loaded page %d"
+                                                + " for P%d and returned it to READY%n",
+                                clock.getCurrentTick(),
+                                pageNumber,
+                                pcb.getPid());
         }
 
-        busy = true;
+        private void loadRequestedPage(
+                        PCB pcb,
+                        int pageNumber) {
 
-        int startTick = clock.getCurrentTick();
-        int completionTick = startTick + SimulationConfig.DISK_IO_TICKS;
+                if (pcb.getPageTable()
+                                .isPagePresent(pageNumber)) {
 
-        System.out.printf(
-                "[Tick %d] Disk started loading"
-                        + " page %d for P%d%n",
-                startTick,
-                pageNumber,
-                pcb.getPid());
+                        return;
+                }
 
-        clock.waitUntilTick(completionTick);
+                int frameNumber = physicalMemory.loadPageIntoFreeFrame(
+                                pcb,
+                                pageNumber);
 
-        loadRequestedPage(pcb, pageNumber);
+                if (frameNumber != PhysicalMemory.NO_FREE_FRAME) {
+                        System.out.printf(
+                                        "[Tick %d] Disk placed P%d page %d"
+                                                        + " into free frame F%d%n",
+                                        clock.getCurrentTick(),
+                                        pcb.getPid(),
+                                        pageNumber,
+                                        frameNumber);
 
-        pcb.setState(ProcessState.READY);
-        readyQueues.addToReadyQueue(pcb);
+                        return;
+                }
 
-        System.out.printf(
-                "[Tick %d] Disk loaded page %d"
-                        + " for P%d and returned it to READY%n",
-                clock.getCurrentTick(),
-                pageNumber,
-                pcb.getPid());
+                PageReplacementResult replacement = physicalMemory.replacePage(
+                                pcb,
+                                pageNumber);
 
-        busy = false;
-    }
+                mmu.invalidatePage(
+                                replacement.getVictimProcessId(),
+                                replacement.getVictimPageNumber());
 
-    private void loadRequestedPage(
-            PCB pcb,
-            int pageNumber) {
+                if (replacement.wasVictimDirty()) {
+                        System.out.printf(
+                                        "[Tick %d] Disk wrote dirty"
+                                                        + " P%d page %d back to disk%n",
+                                        clock.getCurrentTick(),
+                                        replacement.getVictimProcessId(),
+                                        replacement.getVictimPageNumber());
+                }
 
-        if (pcb.getPageTable()
-                .isPagePresent(pageNumber)) {
-
-            return;
+                System.out.printf(
+                                "[Tick %d] %s replacement used F%d:"
+                                                + " removed P%d page %d"
+                                                + " and loaded P%d page %d%n",
+                                clock.getCurrentTick(),
+                                physicalMemory.getReplacementPolicy(),
+                                replacement.getFrameNumber(),
+                                replacement.getVictimProcessId(),
+                                replacement.getVictimPageNumber(),
+                                pcb.getPid(),
+                                pageNumber);
         }
-
-        int frameNumber = physicalMemory.loadPageIntoFreeFrame(
-                pcb,
-                pageNumber);
-
-        if (frameNumber != PhysicalMemory.NO_FREE_FRAME) {
-            System.out.printf(
-                    "[Tick %d] Disk placed P%d page %d"
-                            + " into free frame F%d%n",
-                    clock.getCurrentTick(),
-                    pcb.getPid(),
-                    pageNumber,
-                    frameNumber);
-
-            return;
-        }
-
-        PageReplacementResult replacement = physicalMemory.replacePage(
-                pcb,
-                pageNumber);
-
-        mmu.invalidatePage(
-                replacement.getVictimProcessId(),
-                replacement.getVictimPageNumber());
-
-        if (replacement.wasVictimDirty()) {
-            System.out.printf(
-                    "[Tick %d] Disk wrote dirty"
-                            + " P%d page %d back to disk%n",
-                    clock.getCurrentTick(),
-                    replacement.getVictimProcessId(),
-                    replacement.getVictimPageNumber());
-        }
-
-        System.out.printf(
-                "[Tick %d] %s replacement used F%d:"
-                        + " removed P%d page %d"
-                        + " and loaded P%d page %d%n",
-                clock.getCurrentTick(),
-                physicalMemory.getReplacementPolicy(),
-                replacement.getFrameNumber(),
-                replacement.getVictimProcessId(),
-                replacement.getVictimPageNumber(),
-                pcb.getPid(),
-                pageNumber);
-    }
 }

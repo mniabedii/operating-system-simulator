@@ -15,10 +15,10 @@ public class PCB {
     private final int priority;
     private final int requiredPages;
 
-    private PageTable pageTable;
+    private volatile PageTable pageTable;
 
     private int remainingBurstTime;
-    private ProcessState state;
+    private volatile ProcessState state;
 
     private final List<Integer> pageReferenceString;
     private final int[] maxResourceDemand;
@@ -152,6 +152,11 @@ public class PCB {
     }
 
     public void setState(ProcessState state) {
+        if (state == null) {
+            throw new IllegalArgumentException(
+                    "Process state cannot be null");
+        }
+
         this.state = state;
     }
 

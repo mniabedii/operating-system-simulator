@@ -128,4 +128,18 @@ public class ReadyQueue {
 
         return result.toString();
     }
+
+    public synchronized String getCompactStatus() {
+        List<PCB> sortedBackground = new ArrayList<>(backgroundQueue);
+
+        sortedBackground.sort(BACKGROUND_ORDER);
+
+        return "Ready{SYS=["
+                + formatQueue(systemQueue)
+                + "], INT=["
+                + formatQueue(interactiveQueue)
+                + "], BG=["
+                + formatQueue(sortedBackground)
+                + "]}";
+    }
 }
