@@ -28,10 +28,9 @@ public class Main {
                                 SimulationConfig.PROCESS_BUFFER_CAPACITY);
 
                 ReadyQueue readyQueues = new ReadyQueue();
+                PageFaultQueue pageFaultQueue = new PageFaultQueue();
+                ResourceWaitQueue resourceWaitQueue = new ResourceWaitQueue();
 
-                /*
-                 * Memory and paging.
-                 */
                 PhysicalMemory physicalMemory = new PhysicalMemory(
                                 SimulationConfig.FRAME_COUNT,
                                 SimulationConfig.PAGE_REPLACEMENT_POLICY);
@@ -41,19 +40,9 @@ public class Main {
 
                 MMU mmu = new MMU(tlb);
 
-                PageFaultQueue pageFaultQueue = new PageFaultQueue();
-
-                /*
-                 * Resource management.
-                 */
                 ResourceManager resourceManager = new ResourceManager(
                                 SimulationConfig.getTotalResources());
 
-                ResourceWaitQueue resourceWaitQueue = new ResourceWaitQueue();
-
-                /*
-                 * Runnable operating-system components.
-                 */
                 ProcessGenerator generator = new ProcessGenerator(
                                 processBuffer,
                                 clock,
@@ -86,9 +75,6 @@ public class Main {
                                 resourceManager,
                                 resourceWaitQueue);
 
-                /*
-                 * Four real Java threads.
-                 */
                 Thread generatorThread = new Thread(
                                 generator,
                                 "process-generator");
@@ -105,10 +91,10 @@ public class Main {
                                 scheduler,
                                 "cpu-scheduler");
 
-                printStartupConfiguration();
+                printConfiguration();
 
                 /*
-                 * Start consumers before producers.
+                 * Start consumers before the producer and scheduler.
                  */
                 diskThread.start();
                 memoryManagerThread.start();
@@ -116,18 +102,16 @@ public class Main {
                 schedulerThread.start();
 
                 /*
-                 * The Scheduler determines when the simulation ends.
+                 * The scheduler detects the global termination condition
+                 * and closes the page-fault queue.
                  */
                 schedulerThread.join();
-
                 generatorThread.join();
                 memoryManagerThread.join();
                 diskThread.join();
 
                 printFinalReport(
                                 clock,
-                                generator,
-                                memoryManager,
                                 scheduler,
                                 diskIO,
                                 readyQueues,
@@ -139,7 +123,7 @@ public class Main {
                                 resourceManager);
         }
 
-        private static void printStartupConfiguration() {
+        private static void printConfiguration() {
                 System.out.println(
                                 "========================================");
 
@@ -154,7 +138,23 @@ public class Main {
                                                 + SimulationConfig.MAX_PROCESSES);
 
                 System.out.println(
-                                "Physical frames: "
+                                "Scheduling: SYSTEM=FCFS, "
+                                                + "INTERACTIVE=RR(q="
+                                                + SimulationConfig.ROUND_ROBIN_QUANTUM
+                                                + "), BACKGROUND=SRTF");
+
+                System.out.println(
+                                "Context-switch cost: "
+                                                + SimulationConfig.CONTEXT_SWITCH_TICKS
+                                                + " ticks");
+
+                System.out.println(
+                                "Aging threshold: "
+                                                + SimulationConfig.AGING_THRESHOLD_TICKS
+                                                + " ticks");
+
+                System.out.println(
+                                "Frames: "
                                                 + SimulationConfig.FRAME_COUNT);
 
                 System.out.println(
@@ -166,25 +166,15 @@ public class Main {
                                                 + SimulationConfig.PAGE_REPLACEMENT_POLICY);
 
                 System.out.println(
-                                "Round Robin quantum: "
-                                                + SimulationConfig.ROUND_ROBIN_QUANTUM);
-
-                System.out.println(
-                                "Context-switch cost: "
-                                                + SimulationConfig.CONTEXT_SWITCH_TICKS);
-
-                System.out.println(
                                 "Disk I/O cost: "
-                                                + SimulationConfig.DISK_IO_TICKS);
-
-                System.out.println(
-                                "Aging threshold: "
-                                                + SimulationConfig.AGING_THRESHOLD_TICKS);
+                                                + SimulationConfig.DISK_IO_TICKS
+                                                + " ticks");
 
                 System.out.println(
                                 "Resources: "
                                                 + Arrays.toString(
-                                                                SimulationConfig.getTotalResources()));
+                                                                SimulationConfig
+                                                                                .getTotalResources()));
 
                 System.out.println(
                                 "========================================");
@@ -194,8 +184,6 @@ public class Main {
 
         private static void printFinalReport(
                         SimulationClock clock,
-                        ProcessGenerator generator,
-                        MemoryManager memoryManager,
                         CPUScheduler scheduler,
                         DiskIO diskIO,
                         ReadyQueue readyQueues,
@@ -206,19 +194,35 @@ public class Main {
                         MMU mmu,
                         ResourceManager resourceManager) {
 
-                int terminated = scheduler.getTerminatedProcessCount();
+                boolean allProcessesTerminated = scheduler
+                                .getTerminatedProcessCount() == SimulationConfig.MAX_PROCESSES;
 
-                int deadlockVictims = scheduler.getDeadlockVictimCount();
+                boolean readyQueuesEmpty = readyQueues.isEmpty();
 
-                int normalTerminations = terminated - deadlockVictims;
+                boolean pageFaultWorkFinished = !pageFaultQueue.hasPendingWork();
+
+                boolean resourceWaitQueueEmpty = resourceWaitQueue.isEmpty();
+
+                boolean diskIdle = !diskIO.isBusy();
 
                 boolean allFramesReleased = physicalMemory.getFreeFrameCount() == physicalMemory.getFrameCount();
 
                 boolean allResourcesReleased = Arrays.equals(
-                                resourceManager.getAvailableResources(),
-                                SimulationConfig.getTotalResources());
+                                resourceManager
+                                                .getAvailableResources(),
+                                SimulationConfig
+                                                .getTotalResources());
+
+                boolean completedSuccessfully = allProcessesTerminated
+                                && readyQueuesEmpty
+                                && pageFaultWorkFinished
+                                && resourceWaitQueueEmpty
+                                && diskIdle
+                                && allFramesReleased
+                                && allResourcesReleased;
 
                 System.out.println();
+
                 System.out.println(
                                 "========================================");
 
@@ -228,29 +232,14 @@ public class Main {
                 System.out.println(
                                 "========================================");
 
-                System.out.println();
-                System.out.println("--- General ---");
-
                 System.out.println(
                                 "Final logical tick: "
                                                 + clock.getCurrentTick());
 
-                System.out.println(
-                                "Terminated processes: "
-                                                + terminated
-                                                + "/"
-                                                + SimulationConfig.MAX_PROCESSES);
-
-                System.out.println(
-                                "Normal terminations: "
-                                                + normalTerminations);
-
-                System.out.println(
-                                "Deadlock victims: "
-                                                + deadlockVictims);
-
-                System.out.println();
-                System.out.println("--- Scheduling ---");
+                System.out.printf(
+                                "Terminated processes: %d/%d%n",
+                                scheduler.getTerminatedProcessCount(),
+                                SimulationConfig.MAX_PROCESSES);
 
                 System.out.println(
                                 "Context switches: "
@@ -261,11 +250,14 @@ public class Main {
                                                 + scheduler.getPreemptionCount());
 
                 System.out.println();
-                System.out.println("--- Memory and Disk ---");
 
                 System.out.println(
                                 "Page faults: "
                                                 + mmu.getPageFaultCount());
+
+                System.out.println(
+                                "Disk operations: "
+                                                + diskIO.getCompletedOperationCount());
 
                 System.out.println(
                                 "TLB hits: "
@@ -279,25 +271,7 @@ public class Main {
                                 "TLB hit rate: %.2f%%%n",
                                 tlb.getHitRate() * 100.0);
 
-                System.out.printf(
-                                "Free frames: %d/%d%n",
-                                physicalMemory.getFreeFrameCount(),
-                                physicalMemory.getFrameCount());
-
                 System.out.println();
-                System.out.println("--- Resources and Deadlocks ---");
-
-                System.out.println(
-                                "Resource requests: "
-                                                + scheduler.getResourceRequestCount());
-
-                System.out.println(
-                                "Resource grants: "
-                                                + scheduler.getResourceGrantCount());
-
-                System.out.println(
-                                "Resource blocks: "
-                                                + scheduler.getResourceBlockCount());
 
                 System.out.println(
                                 "Deadlocks detected: "
@@ -307,42 +281,23 @@ public class Main {
                                 "Deadlock victims: "
                                                 + scheduler.getDeadlockVictimCount());
 
-                System.out.println(
-                                "Final available resources: "
-                                                + Arrays.toString(
-                                                                resourceManager
-                                                                                .getAvailableResources()));
-
                 System.out.println();
-                System.out.println("--- Final State Checks ---");
-
-                System.out.println(
-                                "Generator finished: "
-                                                + generator.isFinished());
-
-                System.out.println(
-                                "Memory Manager finished: "
-                                                + memoryManager.isFinished());
-
-                System.out.println(
-                                "Scheduler finished: "
-                                                + scheduler.isFinished());
-
-                System.out.println(
-                                "Disk finished: "
-                                                + diskIO.isFinished());
 
                 System.out.println(
                                 "Ready queues empty: "
-                                                + readyQueues.isEmpty());
+                                                + readyQueuesEmpty);
 
                 System.out.println(
-                                "Page-fault queue empty: "
-                                                + pageFaultQueue.isEmpty());
+                                "Page-fault work finished: "
+                                                + pageFaultWorkFinished);
 
                 System.out.println(
                                 "Resource wait queue empty: "
-                                                + resourceWaitQueue.isEmpty());
+                                                + resourceWaitQueueEmpty);
+
+                System.out.println(
+                                "Disk idle: "
+                                                + diskIdle);
 
                 System.out.println(
                                 "All frames released: "
@@ -353,11 +308,10 @@ public class Main {
                                                 + allResourcesReleased);
 
                 System.out.println();
-                System.out.println(
-                                "========================================");
 
                 System.out.println(
-                                " SIMULATION FINISHED");
+                                "Simulation completed successfully: "
+                                                + completedSuccessfully);
 
                 System.out.println(
                                 "========================================");
