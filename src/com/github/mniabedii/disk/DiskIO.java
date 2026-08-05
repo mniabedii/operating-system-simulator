@@ -159,13 +159,17 @@ public class DiskIO implements Runnable {
                         return;
                 }
 
-                PageReplacementResult replacement = physicalMemory.replacePage(
-                                pcb,
-                                pageNumber);
+                PageReplacementResult replacement;
 
-                mmu.invalidatePage(
-                                replacement.getVictimProcessId(),
-                                replacement.getVictimPageNumber());
+                synchronized (physicalMemory) {
+                        replacement = physicalMemory.replacePage(
+                                        pcb,
+                                        pageNumber);
+
+                        mmu.invalidatePage(
+                                        replacement.getVictimProcessId(),
+                                        replacement.getVictimPageNumber());
+                }
 
                 if (replacement.wasVictimDirty()) {
                         System.out.printf(

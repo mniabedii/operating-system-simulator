@@ -8,12 +8,8 @@ public class PageFaultRequest {
 
     private final PCB pcb;
     private final int pageNumber;
-    private final int requestTick;
 
-    public PageFaultRequest(
-            PCB pcb,
-            int pageNumber,
-            int requestTick) {
+    public PageFaultRequest(PCB pcb, int pageNumber) {
 
         this.pcb = Objects.requireNonNull(pcb, "pcb");
 
@@ -25,13 +21,7 @@ public class PageFaultRequest {
                             + " for P" + pcb.getPid());
         }
 
-        if (requestTick < 0) {
-            throw new IllegalArgumentException(
-                    "Request tick cannot be negative");
-        }
-
         this.pageNumber = pageNumber;
-        this.requestTick = requestTick;
     }
 
     public PCB getPCB() {
@@ -40,18 +30,5 @@ public class PageFaultRequest {
 
     public int getPageNumber() {
         return pageNumber;
-    }
-
-    public int getRequestTick() {
-        return requestTick;
-    }
-
-    @Override
-    public String toString() {
-        return "PageFaultRequest{P"
-                + pcb.getPid()
-                + ", page=" + pageNumber
-                + ", tick=" + requestTick
-                + '}';
     }
 }

@@ -18,12 +18,6 @@ public class PhysicalMemory {
     private final PageReplacementPolicy replacementPolicy;
     private final Random random;
 
-    public PhysicalMemory(int frameCount) {
-        this(
-                frameCount,
-                PageReplacementPolicy.FIFO);
-    }
-
     public PhysicalMemory(
             int frameCount,
             PageReplacementPolicy replacementPolicy) {
@@ -154,7 +148,7 @@ public class PhysicalMemory {
                 victimDirty);
     }
 
-    public synchronized void removePage(
+    private synchronized void removePage(
             PCB pcb,
             int pageNumber) {
 

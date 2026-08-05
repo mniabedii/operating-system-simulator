@@ -80,13 +80,9 @@ public class MemoryManager implements Runnable {
 
         System.out.printf(
                 "[Tick %d] Memory Manager admitted P%d"
-                        + " to %s queue"
-                        + " with %d page-table entries"
-                        + " and %d loaded pages%n",
+                        + " with %d page-table entries%n",
                 clock.getCurrentTick(),
                 pcb.getPid(),
-                pcb.getType(),
-                pageTable.getPageCount(),
-                pageTable.getPresentPageCount());
+                pageTable.getPageCount());
     }
 }

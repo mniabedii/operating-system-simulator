@@ -6,7 +6,6 @@ import java.util.Objects;
 
 public class Frame {
 
-    public static final int NO_PROCESS = -1;
     public static final int NO_PAGE = -1;
 
     private final int frameNumber;
@@ -27,14 +26,6 @@ public class Frame {
 
     public int getFrameNumber() {
         return frameNumber;
-    }
-
-    public synchronized int getProcessId() {
-        if (pcb == null) {
-            return NO_PROCESS;
-        }
-
-        return pcb.getPid();
     }
 
     public synchronized PCB getPCB() {

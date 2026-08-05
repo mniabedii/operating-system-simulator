@@ -89,14 +89,6 @@ public class TLB {
         }
     }
 
-    public synchronized void clear() {
-        entries.clear();
-    }
-
-    public synchronized int size() {
-        return entries.size();
-    }
-
     public synchronized int getHitCount() {
         return hitCount;
     }
@@ -105,35 +97,13 @@ public class TLB {
         return missCount;
     }
 
-    public synchronized int getLookupCount() {
-        return hitCount + missCount;
-    }
-
     public synchronized double getHitRate() {
-        int totalLookups = getLookupCount();
+        int totalLookups = hitCount + missCount;
 
         if (totalLookups == 0) {
             return 0.0;
         }
 
         return (double) hitCount / totalLookups;
-    }
-
-    public synchronized String getStatus() {
-        if (entries.isEmpty()) {
-            return "TLB: empty";
-        }
-
-        StringBuilder result = new StringBuilder("TLB: ");
-
-        for (TLBEntry entry : entries) {
-            if (result.length() > 5) {
-                result.append(" | ");
-            }
-
-            result.append(entry);
-        }
-
-        return result.toString();
     }
 }

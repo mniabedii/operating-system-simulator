@@ -107,12 +107,6 @@ public class ResourceManager {
         return processes.containsKey(pcb.getPid());
     }
 
-    public synchronized int[] getTotalResources() {
-        return Arrays.copyOf(
-                totalResources,
-                totalResources.length);
-    }
-
     public synchronized int[] getAvailableResources() {
         return Arrays.copyOf(
                 availableResources,
@@ -143,34 +137,6 @@ public class ResourceManager {
         }
 
         return need;
-    }
-
-    public synchronized String getStatus() {
-        StringBuilder result = new StringBuilder();
-
-        result.append("Total: ")
-                .append(Arrays.toString(totalResources))
-                .append(System.lineSeparator());
-
-        result.append("Available: ")
-                .append(Arrays.toString(availableResources));
-
-        for (PCB pcb : processes.values()) {
-            result.append(System.lineSeparator())
-                    .append("P")
-                    .append(pcb.getPid())
-                    .append(" Max=")
-                    .append(Arrays.toString(
-                            pcb.getMaxResourceDemand()))
-                    .append(" Allocation=")
-                    .append(Arrays.toString(
-                            allocations.get(pcb.getPid())))
-                    .append(" Need=")
-                    .append(Arrays.toString(
-                            getRemainingNeed(pcb)));
-        }
-
-        return result.toString();
     }
 
     private void validateRegisteredProcess(PCB pcb) {
@@ -253,9 +219,5 @@ public class ResourceManager {
     public synchronized List<PCB> getRegisteredProcessesSnapshot() {
 
         return new ArrayList<>(processes.values());
-    }
-
-    public synchronized int getRegisteredProcessCount() {
-        return processes.size();
     }
 }

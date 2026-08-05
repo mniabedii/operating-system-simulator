@@ -63,16 +63,4 @@ public class ProcessBuffer {
         closed = true;
         notifyAll();
     }
-
-    public synchronized boolean isClosed() {
-        return closed;
-    }
-
-    public synchronized int size() {
-        return queue.size();
-    }
-
-    public synchronized boolean isEmpty() {
-        return queue.isEmpty();
-    }
 }

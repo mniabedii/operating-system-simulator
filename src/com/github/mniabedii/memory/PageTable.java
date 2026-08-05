@@ -38,48 +38,10 @@ public class PageTable {
         return getEntry(pageNumber).isPresent();
     }
 
-    public synchronized void mapPageToFrame(
-            int pageNumber,
-            int frameNumber) {
-
-        getEntry(pageNumber).mapToFrame(frameNumber);
-    }
-
-    public synchronized void unmapPage(int pageNumber) {
-        getEntry(pageNumber).removeFromFrame();
-    }
-
-    public synchronized int getPresentPageCount() {
-        int count = 0;
-
-        for (PageTableEntry entry : entries) {
-            if (entry.isPresent()) {
-                count++;
-            }
-        }
-
-        return count;
-    }
-
     private void validatePageNumber(int pageNumber) {
         if (pageNumber < 0 || pageNumber >= entries.size()) {
             throw new IllegalArgumentException(
                     "Invalid page number: " + pageNumber);
         }
-    }
-
-    @Override
-    public synchronized String toString() {
-        StringBuilder result = new StringBuilder();
-
-        for (PageTableEntry entry : entries) {
-            if (result.length() > 0) {
-                result.append(System.lineSeparator());
-            }
-
-            result.append(entry);
-        }
-
-        return result.toString();
     }
 }

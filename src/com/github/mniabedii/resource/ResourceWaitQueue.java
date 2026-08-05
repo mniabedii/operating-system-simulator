@@ -37,7 +37,7 @@ public class ResourceWaitQueue {
         return requests.remove(request);
     }
 
-    public synchronized boolean containsProcess(
+    private synchronized boolean containsProcess(
             int processId) {
 
         for (ResourceWaitRequest request : requests) {
@@ -59,32 +59,6 @@ public class ResourceWaitQueue {
 
     public synchronized int size() {
         return requests.size();
-    }
-
-    public synchronized String getStatus() {
-        if (requests.isEmpty()) {
-            return "Resource Wait Queue: empty";
-        }
-
-        StringBuilder result = new StringBuilder("Resource Wait Queue:");
-
-        for (ResourceWaitRequest request : requests) {
-            result.append(System.lineSeparator())
-                    .append(request);
-        }
-
-        return result.toString();
-    }
-
-    public synchronized ResourceWaitRequest getRequestForProcess(int processId) {
-
-        for (ResourceWaitRequest request : requests) {
-            if (request.getPCB().getPid() == processId) {
-                return request;
-            }
-        }
-
-        return null;
     }
 
     public synchronized ResourceWaitRequest removeProcess(int processId) {

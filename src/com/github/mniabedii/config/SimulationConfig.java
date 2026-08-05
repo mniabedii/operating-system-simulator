@@ -26,12 +26,13 @@ public final class SimulationConfig {
     public static final int ROUND_ROBIN_QUANTUM = 3;
     public static final int CONTEXT_SWITCH_TICKS = 2;
     public static final int DISK_IO_TICKS = 5;
+    public static final int MEMORY_WRITE_CHANCE_PERCENT = 30;
 
     public static final int FRAME_COUNT = 12;
     public static final int TLB_CAPACITY = 3;
 
     public static final int RESOURCE_REQUEST_CHANCE_PERCENT = 30;
-    public static final long RESOURCE_RANDOM_SEED = 4042L;
+    public static final long SCHEDULER_RANDOM_SEED = 4042L;
 
     public static final PageReplacementPolicy PAGE_REPLACEMENT_POLICY = PageReplacementPolicy.FIFO;
 

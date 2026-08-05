@@ -9,12 +9,8 @@ public class ResourceWaitRequest {
 
     private final PCB pcb;
     private final int[] request;
-    private final int requestTick;
 
-    public ResourceWaitRequest(
-            PCB pcb,
-            int[] request,
-            int requestTick) {
+    public ResourceWaitRequest(PCB pcb, int[] request) {
 
         this.pcb = Objects.requireNonNull(pcb, "pcb");
 
@@ -41,16 +37,9 @@ public class ResourceWaitRequest {
                     "Resource request cannot be all zero");
         }
 
-        if (requestTick < 0) {
-            throw new IllegalArgumentException(
-                    "Request tick cannot be negative");
-        }
-
         this.request = Arrays.copyOf(
                 request,
                 request.length);
-
-        this.requestTick = requestTick;
     }
 
     public PCB getPCB() {
@@ -61,18 +50,5 @@ public class ResourceWaitRequest {
         return Arrays.copyOf(
                 request,
                 request.length);
-    }
-
-    public int getRequestTick() {
-        return requestTick;
-    }
-
-    @Override
-    public String toString() {
-        return "P" + pcb.getPid()
-                + " requests "
-                + Arrays.toString(request)
-                + " since tick "
-                + requestTick;
     }
 }

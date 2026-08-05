@@ -56,18 +56,11 @@ public class CPUScheduler implements Runnable {
         private int deadlockCount;
         private int deadlockVictimCount;
 
-        private final Random resourceRandom;
-
-        private int resourceRequestCount;
-        private int resourceGrantCount;
-        private int resourceBlockCount;
+        private final Random random;
 
         private int cpuExecutionTickCount;
         private int idleTickCount;
-        private int contextSwitchTickCount;
-        private int tlbPenaltyTickCount;
 
-        private final List<PCB> completedProcesses;
         private String pendingDeadlockStatus;
 
         public CPUScheduler(
@@ -148,19 +141,12 @@ public class CPUScheduler implements Runnable {
                 this.deadlockCount = 0;
                 this.deadlockVictimCount = 0;
 
-                this.resourceRandom = new Random(
-                                SimulationConfig.RESOURCE_RANDOM_SEED);
-
-                this.resourceRequestCount = 0;
-                this.resourceGrantCount = 0;
-                this.resourceBlockCount = 0;
+                this.random = new Random(
+                                SimulationConfig.SCHEDULER_RANDOM_SEED);
 
                 this.cpuExecutionTickCount = 0;
                 this.idleTickCount = 0;
-                this.contextSwitchTickCount = 0;
-                this.tlbPenaltyTickCount = 0;
 
-                this.completedProcesses = new ArrayList<>();
                 this.pendingDeadlockStatus = "NONE";
         }
 
@@ -207,14 +193,6 @@ public class CPUScheduler implements Runnable {
                 return terminatedProcessCount;
         }
 
-        public int getContextSwitchCount() {
-                return contextSwitchCount;
-        }
-
-        public PCB getRunningProcess() {
-                return runningProcess;
-        }
-
         public int getPreemptionCount() {
                 return preemptionCount;
         }
@@ -227,47 +205,12 @@ public class CPUScheduler implements Runnable {
                 return deadlockVictimCount;
         }
 
-        public int getResourceRequestCount() {
-                return resourceRequestCount;
-        }
-
-        public int getResourceGrantCount() {
-                return resourceGrantCount;
-        }
-
-        public int getResourceBlockCount() {
-                return resourceBlockCount;
-        }
-
         public int getCpuExecutionTickCount() {
                 return cpuExecutionTickCount;
         }
 
-        public int getIdleTickCount() {
-                return idleTickCount;
-        }
-
-        public int getContextSwitchTickCount() {
-                return contextSwitchTickCount;
-        }
-
-        public int getTlbPenaltyTickCount() {
-                return tlbPenaltyTickCount;
-        }
-
-        public List<PCB> getCompletedProcessesSnapshot() {
-                return new ArrayList<>(completedProcesses);
-        }
-
-        public double getCpuUtilization() {
-                int totalTicks = clock.getCurrentTick();
-
-                if (totalTicks == 0) {
-                        return 0.0;
-                }
-
-                return (double) cpuExecutionTickCount
-                                / totalTicks;
+        public int getContextSwitchCount() {
+                return contextSwitchCount;
         }
 
         private String determinePreemptionReason() {
@@ -356,8 +299,6 @@ public class CPUScheduler implements Runnable {
 
                 for (int tick = 1; tick <= SimulationConfig.CONTEXT_SWITCH_TICKS; tick++) {
 
-                        contextSwitchTickCount++;
-
                         advanceOneTick(
                                         "CONTEXT_SWITCH "
                                                         + tick
@@ -370,7 +311,6 @@ public class CPUScheduler implements Runnable {
                 pcb.resetReadyWaitTicks();
                 interactiveQuantumUsed = 0;
                 pcb.setState(ProcessState.RUNNING);
-                pcb.recordFirstRunTick(clock.getCurrentTick());
                 runningProcess = pcb;
 
                 System.out.printf(
@@ -384,14 +324,23 @@ public class CPUScheduler implements Runnable {
                 PCB pcb = runningProcess;
 
                 int pageNumber = pcb.getCurrentPageReference();
+                int offset = 0;
 
-                MemoryAccessResult result = mmu.translate(
-                                pcb,
-                                pageNumber,
-                                0);
+                boolean writeAccess = random.nextInt(100) < SimulationConfig.MEMORY_WRITE_CHANCE_PERCENT;
+
+                MemoryAccessResult result;
+
+                synchronized (physicalMemory) {
+                        result = mmu.translate(pcb, pageNumber, offset);
+
+                        if (!result.isPageFault() && writeAccess) {
+                                pcb.getPageTable()
+                                                .getEntry(pageNumber)
+                                                .setDirty(true);
+                        }
+                }
 
                 if (result.isTlbMiss()) {
-                        tlbPenaltyTickCount++;
                         advanceOneTick(
                                         "P" + pcb.getPid()
                                                         + " TLB_MISS"
@@ -399,9 +348,7 @@ public class CPUScheduler implements Runnable {
                 }
 
                 if (result.isPageFault()) {
-                        blockForPageFault(
-                                        pcb,
-                                        pageNumber);
+                        blockForPageFault(pcb, pageNumber);
 
                         return;
                 }
@@ -425,8 +372,16 @@ public class CPUScheduler implements Runnable {
                 advanceOneTick(
                                 "RUNNING P"
                                                 + pcb.getPid()
-                                                + " page="
+                                                + " logical=(page="
                                                 + pageNumber
+                                                + ", offset="
+                                                + offset
+                                                + ") physical=(frame="
+                                                + result.getFrameNumber()
+                                                + ", offset="
+                                                + result.getOffset()
+                                                + ") access="
+                                                + (writeAccess ? "WRITE" : "READ")
                                                 + " remaining="
                                                 + pcb.getRemainingBurstTime());
 
@@ -447,10 +402,7 @@ public class CPUScheduler implements Runnable {
                 pcb.setWaitReason(WaitReason.PAGE_FAULT);
                 pcb.setState(ProcessState.WAITING);
 
-                PageFaultRequest request = new PageFaultRequest(
-                                pcb,
-                                pageNumber,
-                                clock.getCurrentTick());
+                PageFaultRequest request = new PageFaultRequest(pcb, pageNumber);
 
                 pageFaultQueue.putRequest(request);
 
@@ -473,8 +425,6 @@ public class CPUScheduler implements Runnable {
                 resourceManager.releaseAllResources(pcb);
 
                 pcb.setWaitReason(WaitReason.NONE);
-                pcb.recordCompletionTick(
-                                clock.getCurrentTick());
                 pcb.setState(ProcessState.TERMINATED);
 
                 terminatedProcessCount++;
@@ -595,14 +545,14 @@ public class CPUScheduler implements Runnable {
                         return false;
                 }
 
-                int chance = resourceRandom.nextInt(100);
+                int chance = random.nextInt(100);
 
                 if (chance >= SimulationConfig.RESOURCE_REQUEST_CHANCE_PERCENT) {
 
                         return false;
                 }
 
-                int selectedIndex = resourceRandom.nextInt(
+                int selectedIndex = random.nextInt(
                                 neededResourceIndexes.size());
 
                 int resourceIndex = neededResourceIndexes.get(selectedIndex);
@@ -611,16 +561,10 @@ public class CPUScheduler implements Runnable {
 
                 request[resourceIndex] = 1;
 
-                resourceRequestCount++;
-
-                ResourceRequestResult result = resourceManager.requestResources(
-                                pcb,
-                                request);
+                ResourceRequestResult result = resourceManager.requestResources(pcb, request);
 
                 switch (result) {
                         case GRANTED:
-                                resourceGrantCount++;
-
                                 System.out.printf(
                                                 "[Tick %d] P%d resource request %s"
                                                                 + " GRANTED; allocation=%s%n",
@@ -633,8 +577,6 @@ public class CPUScheduler implements Runnable {
                                 return false;
 
                         case NOT_AVAILABLE:
-                                resourceBlockCount++;
-
                                 System.out.printf(
                                                 "[Tick %d] P%d resource request %s"
                                                                 + " NOT AVAILABLE%n",
@@ -665,10 +607,7 @@ public class CPUScheduler implements Runnable {
                 pcb.setWaitReason(WaitReason.RESOURCE);
                 pcb.setState(ProcessState.WAITING);
 
-                ResourceWaitRequest waitRequest = new ResourceWaitRequest(
-                                pcb,
-                                request,
-                                clock.getCurrentTick());
+                ResourceWaitRequest waitRequest = new ResourceWaitRequest(pcb, request);
 
                 resourceWaitQueue.addRequest(waitRequest);
 
@@ -746,13 +685,8 @@ public class CPUScheduler implements Runnable {
 
                 resourceManager.releaseAllResources(victim);
 
-                victim.recordCompletionTick(
-                                clock.getCurrentTick());
-
                 victim.setWaitReason(WaitReason.NONE);
                 victim.setState(ProcessState.TERMINATED);
-
-                completedProcesses.add(victim);
 
                 terminatedProcessCount++;
                 deadlockVictimCount++;
@@ -782,8 +716,6 @@ public class CPUScheduler implements Runnable {
 
                         if (result == ResourceRequestResult.GRANTED) {
                                 resourceWaitQueue.removeRequest(waitRequest);
-
-                                resourceGrantCount++;
 
                                 pcb.setWaitReason(WaitReason.NONE);
                                 pcb.setState(ProcessState.READY);

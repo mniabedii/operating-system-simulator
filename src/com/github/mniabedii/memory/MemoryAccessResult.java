@@ -50,10 +50,6 @@ public class MemoryAccessResult {
         return status;
     }
 
-    public int getPageNumber() {
-        return pageNumber;
-    }
-
     public int getFrameNumber() {
         return frameNumber;
     }
@@ -66,32 +62,7 @@ public class MemoryAccessResult {
         return status == MemoryAccessStatus.PAGE_FAULT;
     }
 
-    public boolean isTlbHit() {
-        return status == MemoryAccessStatus.TLB_HIT;
-    }
-
     public boolean isTlbMiss() {
         return status != MemoryAccessStatus.TLB_HIT;
-    }
-
-    public boolean hasPhysicalAddress() {
-        return !isPageFault();
-    }
-
-    @Override
-    public String toString() {
-        if (isPageFault()) {
-            return "PAGE_FAULT{page="
-                    + pageNumber
-                    + ", offset="
-                    + offset
-                    + '}';
-        }
-
-        return status
-                + "{page=" + pageNumber
-                + ", frame=" + frameNumber
-                + ", offset=" + offset
-                + '}';
     }
 }

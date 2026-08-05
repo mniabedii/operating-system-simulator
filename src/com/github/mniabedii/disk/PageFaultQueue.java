@@ -72,10 +72,6 @@ public class PageFaultQueue {
         notifyAll();
     }
 
-    public synchronized boolean isClosed() {
-        return closed;
-    }
-
     public synchronized boolean isEmpty() {
         return requests.isEmpty();
     }

@@ -146,24 +146,6 @@ public class ReadyQueue {
                 && backgroundQueue.isEmpty();
     }
 
-    public synchronized int getTotalSize() {
-        return systemQueue.size()
-                + interactiveQueue.size()
-                + backgroundQueue.size();
-    }
-
-    public synchronized int getSystemQueueSize() {
-        return systemQueue.size();
-    }
-
-    public synchronized int getInteractiveQueueSize() {
-        return interactiveQueue.size();
-    }
-
-    public synchronized int getBackgroundQueueSize() {
-        return backgroundQueue.size();
-    }
-
     public synchronized boolean hasSystemProcess() {
         return !systemQueue.isEmpty();
     }
@@ -174,21 +156,6 @@ public class ReadyQueue {
 
     public synchronized PCB peekShortestBackgroundProcess() {
         return backgroundQueue.peek();
-    }
-
-    public synchronized String getQueueStatus() {
-        List<PCB> sortedBackground = new ArrayList<>(backgroundQueue);
-
-        sortedBackground.sort(BACKGROUND_ORDER);
-
-        return "System Queue: "
-                + formatQueue(systemQueue)
-                + System.lineSeparator()
-                + "Interactive Queue: "
-                + formatQueue(interactiveQueue)
-                + System.lineSeparator()
-                + "Background Queue: "
-                + formatQueue(sortedBackground);
     }
 
     private String formatQueue(Collection<PCB> queue) {
